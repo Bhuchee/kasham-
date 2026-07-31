@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Linking } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useCartStore } from '../store/cartStore';
 import { StoreSwitcherSheet } from '../components/StoreSwitcherSheet';
@@ -18,7 +18,9 @@ import {
     ArrowLeftRight,
     DoorOpen,
     Users,
-    Zap
+    Zap,
+    FileText,
+    Shield
 } from 'lucide-react-native';
 
 import PersonalInfoScreen from './PersonalInfoScreen';
@@ -224,6 +226,20 @@ export default function MoreScreen() {
                                 onPress={() => setActiveSubScreen('DevTools')} 
                             />
                         )}
+                        <MenuItem 
+                            icon={FileText} 
+                            color="#8B5CF6" 
+                            label="Terms of Service" 
+                            sublabel="Read our terms"
+                            onPress={() => Linking.openURL('https://usechobo.com/terms')} 
+                        />
+                        <MenuItem 
+                            icon={Shield} 
+                            color="#10B981" 
+                            label="Privacy Policy" 
+                            sublabel="Read our privacy policy"
+                            onPress={() => Linking.openURL('https://usechobo.com/privacy')} 
+                        />
                     </View>
                 </View>
 

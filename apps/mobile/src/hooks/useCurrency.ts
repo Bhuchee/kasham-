@@ -6,7 +6,7 @@ import { formatCurrency } from '../utils/format';
 const COUNTRY_CODE_KEY = 'countryCode';
 
 interface CurrencyState {
-    currency: typeof DEFAULT_CURRENCY;
+    currency: ReturnType<typeof getCurrencyByCountry>;
     countryCode: string;
     setCountryCode: (code: string) => Promise<void>;
     initCurrency: () => Promise<void>;

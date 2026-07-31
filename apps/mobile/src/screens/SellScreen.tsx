@@ -63,23 +63,35 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const { width } = Dimensions.get('window');
 const ITEM_WIDTH = (width - 48 - 16) / 2; // 2 columns, 24px padding sides, 16px gap
 
+// FIX 1 — Clean tier badge helper (no more inline ternary chains)
+const getPlanBadge = (tier: string) => {
+    switch (tier) {
+        case 'GROWTH':   return { label: 'Growth',     bg: '#DCFCE7', text: '#15803D' };
+        case 'BUSINESS': return { label: 'Business',   bg: '#DBEAFE', text: '#1E40AF' };
+        case 'ENTERPRISE': return { label: 'Enterprise', bg: '#FEF9C3', text: '#92400E' };
+        default:         return { label: 'Free',       bg: '#F1F5F9', text: '#64748B' };
+    }
+};
+
 // --- HEADER COMPONENT ---
 export const Header = ({ title, subtitle, showBell = true }: { title: string, subtitle?: string, showBell?: boolean }) => {
     const insets = useSafeAreaInsets();
     const { isOnline } = useSyncStore();
-    const { userId, activeStoreOwnerId, stores, setShowSubscriptionModal } = useAuthStore();
+    const { userId, activeStoreOwnerId, stores, activeRole, setShowSubscriptionModal } = useAuthStore();
     const [unreadCount, setUnreadCount] = useState(0);
     const [sheetVisible, setSheetVisible] = useState(false);
 
     const currentStore = stores.find(s => s.ownerId === activeStoreOwnerId);
     const tier = currentStore?.tier || 'FREE';
+    const badge = getPlanBadge(tier);
 
     useEffect(() => {
         if (!showBell || !userId) return;
-        getNotifications(userId).then(data => {
+        // FIX 7 — pass activeRole so role-based filtering applies to unread count
+        getNotifications(userId, activeRole ?? undefined).then(data => {
             setUnreadCount(data.filter((n: any) => n.is_read === 0).length);
         });
-    }, [showBell, sheetVisible, userId]);
+    }, [showBell, sheetVisible, userId, activeRole]);
 
     return (
         <View style={{ paddingTop: insets.top + 4 }} className="bg-white px-6 pb-2 border-b border-border flex-row items-center justify-between z-50">
@@ -87,12 +99,12 @@ export const Header = ({ title, subtitle, showBell = true }: { title: string, su
                 <View className="flex-row items-center gap-2">
                     <Text className="text-textPrimary font-black text-xl" numberOfLines={1} ellipsizeMode="tail" style={{ flexShrink: 1 }}>{title}</Text>
                     {title === (currentStore?.shopName || 'Chobo') && (
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             onPress={() => setShowSubscriptionModal(true)}
-                            className={`px-1.5 py-0.5 rounded pl-1 pr-1.5 flex-row items-center ${tier === 'PRO' ? 'bg-primary/20' : tier === 'ENTERPRISE' ? 'bg-purple-500/20' : 'bg-slate-200'}`}
+                            style={{ backgroundColor: badge.bg, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, flexDirection: 'row', alignItems: 'center' }}
                         >
-                            <Text className={`text-[8px] font-black uppercase tracking-widest ${tier === 'PRO' ? 'text-primary' : tier === 'ENTERPRISE' ? 'text-purple-600' : 'text-slate-600'}`}>
-                                {tier}
+                            <Text style={{ fontSize: 8, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1, color: badge.text }}>
+                                {badge.label}
                             </Text>
                         </TouchableOpacity>
                     )}
@@ -217,28 +229,6 @@ export default function SellScreen({ onNavigateToStock, onNavigateToOverview }: 
         setFinalPaidAmount(total.toString());
     }, [total]);
 
-    const handleEnableBiometric = async () => {
-        const result = await LocalAuthentication.authenticateAsync({
-            promptMessage: 'Authenticate to enable biometric login'
-        });
-        if (result.success) {
-            await SecureStore.setItemAsync('biometricEnabled', 'true');
-            if (userId) {
-                await SecureStore.setItemAsync('biometricUserId', userId);
-            }
-            setModalConfig({
-                visible: true,
-                type: 'success',
-                title: 'Success',
-                subtitle: 'Biometric login enabled!',
-            });
-            await SecureStore.setItemAsync('hasPromptedBiometric', 'true');
-            setBiometricPromptVisible(false);
-        }
-        await SecureStore.setItemAsync('hasPromptedBiometric', 'true');
-        setBiometricPromptVisible(false);
-    };
-
     const handleProductPress = (product: any) => {
         const cartItem = items.find(i => i.productId === product.id);
         const inCartQty = cartItem ? cartItem.quantity : 0;
@@ -353,14 +343,15 @@ export default function SellScreen({ onNavigateToStock, onNavigateToOverview }: 
             };
 
             // 2. Create quantity_pending notification
-            await createNotification(
-                uuidv4(),
-                'quantity_pending',
-                'Stock quantity missing',
-                `${miniProductName} was added during a sale but has no quantity set. Tap to update.`,
-                id,
-                userId
-            );
+            await createNotification({
+                id: uuidv4(),
+                type: 'quantity_pending',
+                title: 'Stock quantity missing',
+                description: `${miniProductName} was added during a sale but has no quantity set. Tap to update.`,
+                relatedId: id,
+                userId,
+                targetRoles: ['OWNER', 'MANAGER'], // Section 6C — only owners/managers see stock alerts
+            });
 
             // 3. Add product to cart
             addItem(newProduct);
@@ -431,10 +422,10 @@ export default function SellScreen({ onNavigateToStock, onNavigateToOverview }: 
                 const newStock = Math.max(0, prod.stock - item.quantity);
                 if (newStock === 0) {
                     const exists = await notificationExistsForRelated(item.productId, 'out_of_stock');
-                    if (!exists) await createNotification(uuidv4(), 'out_of_stock', `${item.name} is out of stock`, `You just sold the last unit.`, item.productId, userId);
+                    if (!exists) await createNotification({ id: uuidv4(), type: 'out_of_stock', title: `${item.name} is out of stock`, description: `You just sold the last unit.`, relatedId: item.productId, userId, targetRoles: ['OWNER', 'MANAGER'] }); // Section 6C
                 } else if (newStock <= threshold) {
                     const exists = await notificationExistsForRelated(item.productId, 'low_stock');
-                    if (!exists) await createNotification(uuidv4(), 'low_stock', `Low stock: ${item.name}`, `Only ${newStock} unit${newStock === 1 ? '' : 's'} remaining.`, item.productId, userId);
+                    if (!exists) await createNotification({ id: uuidv4(), type: 'low_stock', title: `Low stock: ${item.name}`, description: `Only ${newStock} unit${newStock === 1 ? '' : 's'} remaining.`, relatedId: item.productId, userId, targetRoles: ['OWNER', 'MANAGER'] }); // Section 6C
                 }
             }
 

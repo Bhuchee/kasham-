@@ -27,14 +27,15 @@ export default function NotificationsSheet({ visible, onClose }: NotificationsSh
         for (const debt of oldDebts) {
             const exists = await notificationExistsForRelated(debt.id, 'debt_reminder');
             if (!exists) {
-                await createNotification(
-                    uuidv4(),
-                    'debt_reminder',
-                    `Payment Reminder: ${debt.customer_name}`,
-                    `${debt.customer_name} has an unpaid balance of ${formatAmount(debt.amount_owed)} from over 3 days ago.`,
-                    debt.id,
-                    userId
-                );
+                await createNotification({
+                    id: uuidv4(),
+                    type: 'debt_reminder',
+                    title: `Payment Reminder: ${debt.customer_name}`,
+                    description: `${debt.customer_name} has an unpaid balance of ${formatAmount(debt.amount_owed)} from over 3 days ago.`,
+                    relatedId: debt.id,
+                    userId,
+                    targetRoles: ['OWNER', 'MANAGER'], // Section 6C — debt reminders for owners/managers only
+                });
             }
         }
 
@@ -44,14 +45,15 @@ export default function NotificationsSheet({ visible, onClose }: NotificationsSh
         if (!exists) {
             const stats = await getDailyStats(userId, 'today');
             if (stats.count > 0) {
-                await createNotification(
-                    uuidv4(),
-                    'daily_summary',
-                    `Daily Summary`,
-                    `You made ${stats.count} sales today totaling ${formatAmount(stats.revenue)}.`,
-                    todayDateStr,
-                    userId
-                );
+                await createNotification({
+                    id: uuidv4(),
+                    type: 'daily_summary',
+                    title: `Daily Summary`,
+                    description: `You made ${stats.count} sales today totaling ${formatAmount(stats.revenue)}.`,
+                    relatedId: todayDateStr,
+                    userId,
+                    // Section 6C — daily summary visible to all roles
+                });
             }
         }
     };

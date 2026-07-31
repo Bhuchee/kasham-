@@ -10,8 +10,9 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from './email.service';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
+import { RedisService } from '../shared/redis.service';
 
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 if (!REFRESH_SECRET) {
@@ -31,6 +32,7 @@ export class AuthService {
         private prisma: PrismaService,
         private jwtService: JwtService,
         private emailService: EmailService,
+        private redisService: RedisService,
     ) {}
 
     // ── Token helpers ──────────────────────────────────────────────────────────
@@ -43,6 +45,10 @@ export class AuthService {
                 expiresIn: '30d',
             }),
         ]);
+
+        const tokenHash = createHash('sha256').update(refresh_token).digest('hex');
+        await this.redisService.set(`refresh:${userId}`, tokenHash, 30 * 24 * 60 * 60);
+
         return { access_token, refresh_token };
     }
 
@@ -328,14 +334,28 @@ export class AuthService {
             const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
             if (!user) throw new UnauthorizedException();
 
+            const storedHash = await this.redisService.get(`refresh:${user.id}`);
+            const incomingHash = createHash('sha256').update(refreshToken).digest('hex');
+            
+            if (!storedHash || storedHash !== incomingHash) {
+                throw new UnauthorizedException('Refresh token revoked or invalid');
+            }
+
             const tokens = await this.generateTokens(user.id, user.email);
             const workspaces = await this.getUserWorkspaces(user.id);
             const ownerWorkspace = workspaces.find(w => w.role === 'OWNER');
             const businessName = ownerWorkspace ? ownerWorkspace.name : (workspaces[0] ? workspaces[0].name : '');
             return { ...tokens, user_id: user.id, workspaces, businessName };
-        } catch {
+        } catch (e: any) {
+            if (e instanceof UnauthorizedException) throw e;
             throw new UnauthorizedException('Invalid or expired refresh token');
         }
+    }
+
+    // ── Logout ─────────────────────────────────────────────────────────────────
+    async logout(userId: string) {
+        await this.redisService.delete(`refresh:${userId}`);
+        return { success: true, message: 'Logged out successfully' };
     }
 
     // ── Forgot Password ────────────────────────────────────────────────────────

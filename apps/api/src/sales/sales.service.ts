@@ -105,10 +105,51 @@ export class SalesService {
                 })),
                 skipDuplicates: true,
             });
+
+            // FIX 6 — Low-stock / out-of-stock push notifications (workspace-scoped)
+            const soldProductIds = [...new Set(
+                changes.saleItems.created
+                    .map((si: any) => si.user_product_id || si.userProductId)
+                    .filter(Boolean)
+            )] as string[];
+
+            for (const productId of soldProductIds) {
+                try {
+                    const product = await (this.prisma as any).product.findUnique({
+                        where: { id: productId },
+                        select: { name: true, stock: true, workspaceId: true },
+                    });
+                    if (!product || product.workspaceId !== workspaceId) continue;
+                    if (product.stock == null) continue; // stock not tracked server-side for this product
+
+                    const LOW_STOCK_THRESHOLD = 5; // TODO: read from workspace.lowStockThreshold when field is added
+
+                    if (product.stock === 0) {
+                        await this.notificationsService.sendToWorkspace(
+                            workspaceId,
+                            'Out of stock',
+                            `${product.name} is now out of stock`,
+                            undefined,
+                            ['OWNER', 'MANAGER', 'STAFF'],
+                        );
+                    } else if (product.stock <= LOW_STOCK_THRESHOLD) {
+                        await this.notificationsService.sendToWorkspace(
+                            workspaceId,
+                            'Low stock alert',
+                            `${product.name} is running low — only ${product.stock} left`,
+                            undefined,
+                            ['OWNER', 'MANAGER', 'STAFF'],
+                        );
+                    }
+                } catch {
+                    // Non-blocking — never fail a sale sync due to notification errors
+                }
+            }
         }
 
         return { changes: {}, timestamp: Date.now() };
     }
+
 
 
     async getDailySummary(workspaceId: string) {

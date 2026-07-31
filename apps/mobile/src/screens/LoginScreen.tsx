@@ -35,6 +35,7 @@ import {
     Mail,
     User,
     Sparkles,
+    CheckSquare,
 } from 'lucide-react-native';
 import CountryPicker, { CountryCode } from 'react-native-country-picker-modal';
 import { saveCountryCode } from '../hooks/useCurrency';
@@ -114,7 +115,7 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
     const [otherBusinessType, setOtherBusinessType] = useState('');
     const [countryCode, setCountryCode] = useState<CountryCode>('NG');
     const [callingCode, setCallingCode] = useState('234');
-    const [tosAccepted, setTosAccepted] = useState(true);
+    const [tosAccepted, setTosAccepted] = useState(false);
 
     // Eye toggles
     const [showPassword, setShowPassword] = useState(false);
@@ -969,18 +970,34 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
                     )}
                 </View>
 
+                {/* Terms of Service Checkbox */}
+                <TouchableOpacity
+                    className="flex-row items-start mb-6 pr-4"
+                    onPress={() => setTosAccepted(!tosAccepted)}
+                >
+                    <View className={`w-5 h-5 rounded border items-center justify-center mr-3 mt-0.5 ${tosAccepted ? 'bg-[#16A34A] border-[#16A34A]' : 'border-[#94A3B8]'}`}>
+                        {tosAccepted && <CheckSquare size={14} color="white" />}
+                    </View>
+                    <Text className="text-[#64748B] text-xs leading-5">
+                        By creating an account, you agree to our{' '}
+                        <Text className="text-[#16A34A] font-bold">Terms of Service</Text>{' '}
+                        and{' '}
+                        <Text className="text-[#16A34A] font-bold">Privacy Policy</Text>.
+                    </Text>
+                </TouchableOpacity>
+
                 {signupError ? <Text className="text-red-500 font-bold text-xs mb-4 text-center">{signupError}</Text> : null}
 
                 {/* Submit button */}
                 <TouchableOpacity
                     onPress={handleSignupStep1}
-                    disabled={loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid}
+                    disabled={loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid || !tosAccepted}
                     className={`w-full h-[52px] rounded-xl items-center justify-center mb-6 ${
-                        loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid ? 'bg-[#E5E7EB]' : 'bg-[#16A34A]'
+                        loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid || !tosAccepted ? 'bg-[#E5E7EB]' : 'bg-[#16A34A]'
                     }`}
                 >
-                    {loading ? <ActivityIndicator color={loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid ? "#94A3B8" : "white"} /> : 
-                    <Text className={`font-semibold text-[15px] ${loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid ? 'text-[#94A3B8]' : 'text-white'}`}>Create account</Text>}
+                    {loading ? <ActivityIndicator color={loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid || !tosAccepted ? "#94A3B8" : "white"} /> : 
+                    <Text className={`font-semibold text-[15px] ${loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid || !tosAccepted ? 'text-[#94A3B8]' : 'text-white'}`}>Create account</Text>}
                 </TouchableOpacity>
 
                 {/* Divider */}

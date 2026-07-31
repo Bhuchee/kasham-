@@ -27,7 +27,7 @@ export interface StoreAccess {
     shopName: string | null;
     role: 'OWNER' | 'MANAGER' | 'STAFF';
     status: string;
-    tier?: string;        // FREE | PRO | ENTERPRISE
+    tier?: string;        // FREE | GROWTH | BUSINESS | ENTERPRISE
 }
 
 interface AuthState {

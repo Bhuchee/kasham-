@@ -81,7 +81,7 @@ export function StoreSwitcherSheet({ visible, onClose, onSwitch }: Props) {
         [activeStoreOwnerId, switchStore, onSwitch, onClose],
     );
 
-    if (!visible && slideAnim._value === SHEET_HEIGHT) return null;
+    if (!visible && (slideAnim as any)._value === SHEET_HEIGHT) return null;
 
     return (
         <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">

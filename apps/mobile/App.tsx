@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform, Keyboard, Modal, Linking } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { initDatabase, getProducts, createProduct } from './src/db';
@@ -84,8 +85,25 @@ function MainApp() {
         shouldShowAlert: true,
         shouldPlaySound: true,
         shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
       }),
     });
+
+    const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      if (data?.type === 'debt_reminder') {
+        setActiveTab('transaction');
+      } else if (data?.type === 'out_of_stock' || data?.type === 'low_stock') {
+        setActiveTab('inventory');
+      } else if (data?.type === 'onboarding_nudge') {
+        setActiveTab('sell');
+      }
+    });
+
+    return () => {
+      responseListener.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -95,20 +113,22 @@ function MainApp() {
       try {
         if (!Device.isDevice) return;
 
-        const { status: existingStatus } = await Notifications.getPermissionsAsync();
-        let finalStatus = existingStatus;
+        const existingStatus = await Notifications.getPermissionsAsync();
+        let isGranted = (existingStatus as any).status === 'granted' || (existingStatus as any).granted;
 
-        if (existingStatus !== 'granted') {
-          const { status } = await Notifications.requestPermissionsAsync();
-          finalStatus = status;
+        if (!isGranted) {
+          const reqStatus = await Notifications.requestPermissionsAsync();
+          isGranted = (reqStatus as any).status === 'granted' || (reqStatus as any).granted;
         }
 
-        if (finalStatus !== 'granted') {
+        if (!isGranted) {
           console.log('[Push] Permission not granted — skipping token registration');
           return;
         }
 
-        const pushToken = await Notifications.getExpoPushTokenAsync();
+        const pushToken = await Notifications.getExpoPushTokenAsync({
+          projectId: Constants.expoConfig?.extra?.eas?.projectId,
+        });
         const expo_push_token = pushToken.data;
 
         await fetch(`${API_URL}/auth/push-token`, {

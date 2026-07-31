@@ -68,7 +68,7 @@ export class ProductsService {
                         await this.notificationsService.createNotification(m.userId, 'LOW_STOCK', message, workspaceId);
                     }
                 }
-                await this.notificationsService.sendToWorkspace(workspaceId, 'Low Stock Alert ⚠️', message);
+                await this.notificationsService.sendToWorkspace(workspaceId, 'Low Stock Alert ⚠️', message, undefined, ['OWNER', 'MANAGER']);
             }
 
             // Log PRODUCT_ADDED activity if this is a new product (create path)
@@ -138,7 +138,7 @@ export class ProductsService {
                     await this.notificationsService.createNotification(m.userId, 'LOW_STOCK', message, workspaceId);
                 }
             }
-            await this.notificationsService.sendToWorkspace(workspaceId, 'Low Stock Alert ⚠️', message);
+            await this.notificationsService.sendToWorkspace(workspaceId, 'Low Stock Alert ⚠️', message, undefined, ['OWNER', 'MANAGER']);
         }
 
         return updated;

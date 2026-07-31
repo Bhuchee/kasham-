@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -12,13 +13,27 @@ import { PaymentsModule } from './payments/payments.module';
 import { DebtsModule } from './debts/debts.module';
 import { CatalogueModule } from './catalogue/catalogue.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { SharedModule } from './shared/shared.module';
 
 @Module({
   imports: [
-    ThrottlerModule.forRoot([{
-      ttl: 60000,  // 1 minute window
-      limit: 100,  // max 100 requests per IP per minute
-    }]),
+    // Multi-tier global throttle: 10 req/sec AND 100 req/min per IP
+    ThrottlerModule.forRoot([
+      {
+        name: 'short',
+        ttl: 1000,   // 1 second window
+        limit: 10,   // 10 requests per second
+      },
+      {
+        name: 'medium',
+        ttl: 60000,  // 1 minute window
+        limit: 100,  // 100 requests per minute
+      },
+    ]),
+    // Cron job scheduler (debt reminders, onboarding nudges)
+    ScheduleModule.forRoot(),
+    // Global RedisService + DebtReminderService
+    SharedModule,
     PrismaModule,
     AuthModule,
     WorkspaceModule,
@@ -34,7 +49,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     AppService,
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: ThrottlerGuard, // Global throttle — applies to all routes
     },
   ],
 })

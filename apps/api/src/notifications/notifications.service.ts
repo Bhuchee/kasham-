@@ -41,9 +41,19 @@ export class NotificationsService {
     }
 
     // ── Send to all members of a workspace ────────────────────────────────────
-    async sendToWorkspace(workspaceId: string, title: string, body: string, excludeUserId?: string) {
+    async sendToWorkspace(
+        workspaceId: string, 
+        title: string, 
+        body: string, 
+        excludeUserId?: string,
+        targetRoles?: string[]
+    ) {
         const members = await this.prisma.workspaceMember.findMany({
-            where: { workspaceId, status: 'ACTIVE' },
+            where: { 
+                workspaceId, 
+                status: 'ACTIVE',
+                ...(targetRoles && targetRoles.length > 0 ? { role: { in: targetRoles as any } } : {})
+            },
             include: { user: { select: { id: true, expoPushToken: true } } },
         });
 

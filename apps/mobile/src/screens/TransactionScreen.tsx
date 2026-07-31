@@ -449,7 +449,7 @@ export default function TransactionScreen() {
                     if (isAvailable) {
                         await Sharing.shareAsync(uri, { UTI: 'public.jpeg', mimeType: 'image/jpeg' });
                     } else {
-                        setModal({
+                        setModalConfig({
                             visible: true,
                             type: 'error',
                             title: 'Error',

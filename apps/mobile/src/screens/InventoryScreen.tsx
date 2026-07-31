@@ -3,8 +3,9 @@ import {
     View, Text, TextInput, TouchableOpacity, FlatList, Modal, ScrollView, Image, ActivityIndicator
 } from 'react-native';
 import AppModal from '../components/AppModal';
+import PaywallModal from '../components/PaywallModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getProducts, createProduct, updateProduct, updateProductQuantity, deleteProduct, getStockSummary } from '../db';
+import { getProducts, createProduct, updateProduct, updateProductQuantity, deleteProduct, getStockSummary, getProductCount } from '../db';
 import { pushSalesToBackend } from '../services/syncService';
 import { 
     Plus, 
@@ -19,7 +20,9 @@ import {
     Filter,
     Camera,
     PackageSearch,
-    PackageCheck
+    PackageCheck,
+    Lock,
+    ChevronRight,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { API_BASE_URL } from '../config';
@@ -39,7 +42,7 @@ interface InventoryScreenProps {
 }
 
 type LookupState = 'idle' | 'local' | 'chobo' | 'global' | 'done';
-type StockTab = 'inStock' | 'lowStock' | 'outOfStock';
+type StockTab = 'inStock' | 'addQuantity';
 const CATEGORIES = [
     { label: 'Provisions', value: 'Provisions' },
     { label: 'Beverages', value: 'Beverages' },
@@ -100,21 +103,32 @@ export default function InventoryScreen({ initialBarcode, onClearBarcode }: Inve
     const [selectedPendingProduct, setSelectedPendingProduct] = useState<any>(null);
 
     const [permission, requestPermission] = useCameraPermissions();
-    const { token, userId, activeRole } = useAuthStore();
+    const { token, userId, activeRole, stores, activeStoreOwnerId, setShowSubscriptionModal } = useAuthStore();
+    const activeStore = stores.find(s => s.ownerId === activeStoreOwnerId);
+    const tier = activeStore?.tier ?? 'FREE';
     const isCashier = activeRole === 'STAFF';
     const { isOnline } = useSyncStore();
     const { symbol, formatAmount } = useCurrency();
     const insets = useSafeAreaInsets();
 
+    // Section 1B — product count for FREE tier soft cap
+    const [productCount, setProductCount] = useState(0);
+    // Section 2A — cost price form state
+    const [costPrice, setCostPrice] = useState('');
+    // FIX 9 — PaywallModal state for locked features
+    const [paywallVisible, setPaywallVisible] = useState(false);
+
     const loadData = useCallback(async () => {
         if (!userId) return;
         const threshold = parseInt((await AsyncStorage.getItem('lowStockThreshold')) || '5', 10);
-        const [rows, sum] = await Promise.all([
+        const [rows, sum, count] = await Promise.all([
             getProducts(userId),
             getStockSummary(userId, threshold),
+            getProductCount(userId),
         ]);
         setProducts(rows);
         setSummary(sum);
+        setProductCount(count);
     }, [userId]);
 
     useEffect(() => { loadData(); }, [loadData]);
@@ -328,6 +342,8 @@ export default function InventoryScreen({ initialBarcode, onClearBarcode }: Inve
         setStock(product.stock.toString());
         setBarcode(product.barcode || '');
         setImageUri(product.image_uri || null);
+        // Section 1B — wire cost price into edit flow
+        setCostPrice(product.cost_price != null ? product.cost_price.toString() : '');
         
         setNameError('');
         setPriceError('');
@@ -393,14 +409,34 @@ export default function InventoryScreen({ initialBarcode, onClearBarcode }: Inve
 
         if (!valid) return;
 
+        // Section 1D — block FREE tier at 50-product limit
+        if (!editingProduct && tier === 'FREE') { // TODO: Remove before launch
+            const count = await getProductCount(userId || '');
+            if (count >= 50) {
+                setModal({
+                    visible: true,
+                    type: 'warning',
+                    title: 'Product limit reached',
+                    subtitle: 'Free accounts can store up to 50 products. Upgrade to Growth for unlimited products.',
+                    primaryLabel: 'Upgrade to Growth',
+                    onPrimary: () => { setModal(null); setShowSubscriptionModal(true); },
+                    secondaryLabel: 'Not now',
+                    onSecondary: () => setModal(null),
+                });
+                return;
+            }
+        }
+        // TODO: Remove FREE check before launch — restore tier gating
+
         setLoading(true);
         try {
             const finalCategory = category === 'Others' ? (customCategory.trim() || 'Others') : category;
+            const parsedCostPrice = costPrice.trim() && !isNaN(parseFloat(costPrice)) ? parseFloat(costPrice) : null;
             
             if (editingProduct) {
-                await updateProduct(editingProduct.id, name, parseFloat(price), parseInt(stock, 10), barcode || null, imageUri, editingProduct.cost_price, finalCategory);
+                await updateProduct(editingProduct.id, name, parseFloat(price), parseInt(stock, 10), barcode || null, imageUri, parsedCostPrice, finalCategory);
             } else {
-                await createProduct(uuidv4(), name, parseFloat(price), parseInt(stock, 10), barcode || null, imageUri, userId || '', null, finalCategory);
+                await createProduct(uuidv4(), name, parseFloat(price), parseInt(stock, 10), barcode || null, imageUri, userId || '', parsedCostPrice, finalCategory);
             }
 
             // Contribute to the shared catalogue in background if online
@@ -522,6 +558,36 @@ export default function InventoryScreen({ initialBarcode, onClearBarcode }: Inve
                 </TouchableOpacity>
             </View>
 
+            {/* Section 1C — FREE tier product limit banner */}
+            {tier === 'FREE' && productCount >= 50 && ( // TODO: Remove before launch
+                <TouchableOpacity
+                    onPress={() => setShowSubscriptionModal(true)}
+                    style={{
+                        backgroundColor: '#FEF9C3',
+                        borderColor: '#FACC15',
+                        borderWidth: 1,
+                        borderRadius: 12,
+                        padding: 14,
+                        marginHorizontal: 16,
+                        marginBottom: 12,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 10,
+                    }}
+                >
+                    <AlertTriangle size={18} color="#92400E" />
+                    <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: '#92400E' }}>
+                            Product limit reached
+                        </Text>
+                        <Text style={{ fontSize: 12, color: '#92400E', marginTop: 2 }}>
+                            You have {productCount} products. Upgrade to Growth for unlimited products.
+                        </Text>
+                    </View>
+                    <ChevronRight size={16} color="#92400E" />
+                </TouchableOpacity>
+            )}
+
             <FlatList
                 data={activeTab === 'inStock' ? filteredProducts.filter(p => p.stock > 0) : products.filter(p => p.stock <= 0)}
                 keyExtractor={p => p.id}
@@ -553,6 +619,14 @@ export default function InventoryScreen({ initialBarcode, onClearBarcode }: Inve
                         <View className="flex-1 ml-4">
                             <Text className="font-bold text-sm text-textPrimary" numberOfLines={1}>{item.name}</Text>
                             <Text className="text-primary font-black mt-0.5">{formatAmount(item.price)}</Text>
+                            {/* Section 2B — cost price nudge for FREE users */}
+                            {tier === 'FREE' && !item.cost_price && ( // TODO: Remove before launch
+                                <TouchableOpacity onPress={() => setShowSubscriptionModal(true)}>
+                                    <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
+                                        Add cost price to track profit
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                         <View className="flex-col items-end gap-2">
                             <View className={`px-2 py-1 rounded-lg ${item.stock <= 5 ? 'bg-dangerLight' : 'bg-lightBackground'}`}>
@@ -607,6 +681,7 @@ export default function InventoryScreen({ initialBarcode, onClearBarcode }: Inve
                         setNameError('');
                         setPriceError('');
                         setStockError('');
+                        setCostPrice(''); // Section 2A — reset cost price
                         setModalVisible(true);
                     }}
                     className="bg-primary w-14 h-14 rounded-full items-center justify-center shadow-lg shadow-primary/30"
@@ -799,6 +874,48 @@ export default function InventoryScreen({ initialBarcode, onClearBarcode }: Inve
                                 </View>
                             </View>
 
+                            {/* Section 2A — Cost Price field (Growth+ only, locked for FREE) */}
+                            {(tier === 'GROWTH' || tier === 'BUSINESS' || tier === 'ENTERPRISE') ? ( // TODO: Remove before launch
+                                <View style={{ marginBottom: 16 }}>
+                                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, marginLeft: 2 }}>Cost price (optional)</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, paddingHorizontal: 14 }}>
+                                        <Text style={{ color: '#64748B', fontWeight: '700', marginRight: 4 }}>{symbol}</Text>
+                                        <TextInput
+                                            value={costPrice}
+                                            onChangeText={setCostPrice}
+                                            keyboardType="numeric"
+                                            placeholder="0.00"
+                                            placeholderTextColor="#94A3B8"
+                                            style={{ flex: 1, paddingVertical: 14, fontSize: 15, fontWeight: '600', color: '#0F172A' }}
+                                        />
+                                    </View>
+                                    <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 4, marginLeft: 2 }}>Used to calculate your profit margin</Text>
+                                </View>
+                            ) : (
+                                // FIX 9 — Locked cost price: open PaywallModal instead of going straight to SubscriptionScreen
+                                <TouchableOpacity
+                                    onPress={() => setPaywallVisible(true)}
+                                    style={{
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        padding: 14,
+                                        backgroundColor: '#F8FAFC',
+                                        borderRadius: 12,
+                                        borderWidth: 1,
+                                        borderColor: '#E5E7EB',
+                                        borderStyle: 'dashed',
+                                        marginBottom: 16,
+                                    }}
+                                >
+                                    <Lock size={14} color="#64748B" />
+                                    <Text style={{ flex: 1, fontSize: 13, color: '#64748B' }}>
+                                        Cost price tracking — Growth plan
+                                    </Text>
+                                    <ChevronRight size={14} color="#64748B" />
+                                </TouchableOpacity>
+                            )}
+
                             {/* Horizontal Category Selector Chips */}
                             <Text className="text-textSecondary text-[10px] font-black uppercase mb-2 ml-1">Category</Text>
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
@@ -892,6 +1009,18 @@ export default function InventoryScreen({ initialBarcode, onClearBarcode }: Inve
                 onSecondary={() => { modal?.onSecondary?.(); setModal(null); }}
                 onDismiss={() => setModal(null)}
                 autoDismiss={modal?.autoDismiss}
+            />
+            {/* FIX 9 — PaywallModal for locked Growth features */}
+            <PaywallModal
+                visible={paywallVisible}
+                onClose={() => setPaywallVisible(false)}
+                featureName="Cost price tracking"
+                featureDescription="Track what you paid for each product to see your real profit margin."
+                requiredTier="GROWTH"
+                onUpgrade={() => {
+                    setPaywallVisible(false);
+                    setShowSubscriptionModal(true);
+                }}
             />
         </View>
     );

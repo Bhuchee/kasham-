@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
+import { AuthRateLimitGuard } from './guards/rate-limit.guard';
 import { WorkspaceService } from '../workspace/workspace.service';
 
 @Controller('auth')
@@ -25,6 +26,7 @@ export class AuthController {
 
     // ── Registration & Verification ───────────────────────────────────────────
 
+    @UseGuards(AuthRateLimitGuard)
     @Post('register')
     register(@Body() body: Record<string, any>) {
         if (!body.email || !body.password) {
@@ -56,6 +58,7 @@ export class AuthController {
 
     // ── Login ─────────────────────────────────────────────────────────────────
 
+    @UseGuards(AuthRateLimitGuard)
     @HttpCode(HttpStatus.OK)
     @Post('login')
     login(@Body() body: Record<string, any>) {
@@ -85,6 +88,7 @@ export class AuthController {
 
     // ── Password Management ───────────────────────────────────────────────────
 
+    @UseGuards(AuthRateLimitGuard)
     @HttpCode(HttpStatus.OK)
     @Post('forgot-password')
     forgotPassword(@Body() body: Record<string, any>) {
@@ -261,6 +265,15 @@ export class AuthController {
             </body>
             </html>
         `;
+    }
+
+    // ── Logout ────────────────────────────────────────────────────────────────
+
+    @UseGuards(AuthGuard)
+    @HttpCode(HttpStatus.OK)
+    @Post('logout')
+    logout(@Request() req: any) {
+        return this.authService.logout(req.user.sub);
     }
 
     @HttpCode(HttpStatus.OK)

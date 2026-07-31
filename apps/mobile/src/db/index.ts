@@ -119,6 +119,8 @@ export async function initDatabase() {
   try { await db.execAsync('ALTER TABLE payment_logs ADD COLUMN user_id TEXT'); } catch(e){}
   try { await db.execAsync('ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT NULL'); } catch(e){}
   try { await db.execAsync('ALTER TABLE products ADD COLUMN category TEXT'); } catch(e){}
+  // Section 6A — role-based notification routing
+  try { await db.execAsync('ALTER TABLE notifications ADD COLUMN target_roles TEXT DEFAULT \'["OWNER","MANAGER","STAFF","CASHIER"]\' '); } catch(e){}
 
   try {
     await db.runAsync(`DELETE FROM products WHERE user_id IS NULL OR user_id = ''`);
@@ -133,6 +135,15 @@ export async function initDatabase() {
 // ---- Products ----
 export async function getProducts(userId: string): Promise<any[]> {
     return await db.getAllAsync('SELECT * FROM products WHERE user_id = ? ORDER BY name ASC', [userId]);
+}
+
+// Section 1A — product count for FREE tier soft cap
+export async function getProductCount(userId: string): Promise<number> {
+    const result = await db.getFirstAsync<{ count: number }>(
+        'SELECT COUNT(*) as count FROM products WHERE user_id = ?',
+        [userId]
+    );
+    return result?.count ?? 0;
 }
 
 export async function createProduct(
@@ -284,6 +295,74 @@ export async function getTopSoldProducts(userId: string, limit: number = 5): Pro
     `, [userId, limit]);
 }
 
+// Section 3A — profit stats for Overview profit card
+export async function getProfitStats(
+    userId: string,
+    filter: 'today' | 'week' | 'month'
+): Promise<{ revenue: number; profit: number; profitMargin: number }> {
+    const now = new Date();
+    let fromTs: number;
+    if (filter === 'today') {
+        const d = new Date(now); d.setHours(0, 0, 0, 0); fromTs = d.getTime();
+    } else if (filter === 'week') {
+        const d = new Date(now); d.setDate(d.getDate() - 7); fromTs = d.getTime();
+    } else {
+        const d = new Date(now); d.setMonth(d.getMonth() - 1); fromTs = d.getTime();
+    }
+
+    const result = await db.getFirstAsync<{ revenue: number; cost: number }>(`
+        SELECT
+            SUM(si.price * si.quantity) as revenue,
+            SUM(COALESCE(p.cost_price, 0) * si.quantity) as cost
+        FROM sale_items si
+        LEFT JOIN products p ON si.product_id = p.id
+        JOIN sales s ON si.sale_id = s.id
+        WHERE s.user_id = ? AND s.timestamp >= ?`,
+        [userId, fromTs]
+    );
+
+    const revenue = result?.revenue ?? 0;
+    const cost = result?.cost ?? 0;
+    const profit = revenue - cost;
+    const profitMargin = revenue > 0 ? Math.round((profit / revenue) * 100) : 0;
+    return { revenue, profit, profitMargin };
+}
+
+// Section 3B — top products with per-product profit (Growth+ only)
+export async function getTopSoldProductsWithProfit(
+    userId: string,
+    limit: number = 5,
+    filter: 'today' | 'week' | 'month' = 'month'
+): Promise<any[]> {
+    const now = new Date();
+    let fromTs: number;
+    if (filter === 'today') {
+        const d = new Date(now); d.setHours(0, 0, 0, 0); fromTs = d.getTime();
+    } else if (filter === 'week') {
+        const d = new Date(now); d.setDate(d.getDate() - 7); fromTs = d.getTime();
+    } else {
+        const d = new Date(now); d.setMonth(d.getMonth() - 1); fromTs = d.getTime();
+    }
+
+    return await db.getAllAsync(`
+        SELECT
+            si.product_name as name,
+            SUM(si.quantity) as total_qty,
+            p.image_uri,
+            si.price,
+            SUM(si.price * si.quantity) as revenue,
+            SUM(COALESCE(p.cost_price, 0) * si.quantity) as cost,
+            SUM(si.price * si.quantity) - SUM(COALESCE(p.cost_price, 0) * si.quantity) as profit
+        FROM sale_items si
+        LEFT JOIN products p ON si.product_id = p.id
+        JOIN sales s ON si.sale_id = s.id
+        WHERE s.user_id = ? AND s.timestamp >= ?
+        GROUP BY si.product_name
+        ORDER BY total_qty DESC
+        LIMIT ?
+    `, [userId, fromTs, limit]);
+}
+
 // ---- Customers & Debts ----
 export async function getCustomers(userId: string): Promise<any[]> {
     return await db.getAllAsync('SELECT * FROM customers WHERE user_id = ? ORDER BY name ASC', [userId]);
@@ -415,21 +494,45 @@ export async function getDailySales(userId: string): Promise<any[]> {
 export const getDebts = getOutstandingDebts;
 
 // ---- Notifications ----
-export async function getNotifications(userId: string): Promise<any[]> {
+// FIX 7: filter by target_roles so each role only sees relevant notifications
+export async function getNotifications(userId: string, userRole?: string): Promise<any[]> {
+    if (!userRole) {
+        // Fallback — no role provided, return all for this user
+        return await db.getAllAsync(
+            'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
+            [userId]
+        );
+    }
+    // Only return notifications whose target_roles include the user's current role
     return await db.getAllAsync(
-        'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC',
-        [userId]
+        `SELECT * FROM notifications
+         WHERE user_id = ?
+           AND (
+             target_roles IS NULL
+             OR target_roles = '[]'
+             OR target_roles LIKE ?
+           )
+         ORDER BY created_at DESC
+         LIMIT 50`,
+        [userId, `%"${userRole}"%`]
     );
 }
 
-export async function createNotification(
-    id: string, type: string, title: string,
-    description: string | null = null, relatedId: string | null = null,
-    userId: string = ''
-): Promise<void> {
+// Section 6B — updated createNotification with target_roles
+export async function createNotification(params: {
+    id: string;
+    type: string;
+    title: string;
+    description?: string | null;
+    relatedId?: string | null;
+    userId: string;
+    targetRoles?: string[];
+}): Promise<void> {
+    const roles = JSON.stringify(params.targetRoles ?? ['OWNER', 'MANAGER', 'STAFF', 'CASHIER']);
     await db.runAsync(
-        'INSERT INTO notifications (id, type, title, description, is_read, user_id, created_at, related_id) VALUES (?, ?, ?, ?, 0, ?, ?, ?)',
-        id, type, title, description, userId, Date.now(), relatedId
+        'INSERT INTO notifications (id, type, title, description, is_read, user_id, created_at, related_id, target_roles) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)',
+        params.id, params.type, params.title, params.description ?? null,
+        params.userId, Date.now(), params.relatedId ?? null, roles
     );
 }
 

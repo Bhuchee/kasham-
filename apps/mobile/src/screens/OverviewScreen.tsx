@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Image } from 'react-native';
-import { getDailyStats, getTopSoldProducts } from '../db';
+import { getDailyStats, getTopSoldProducts, getProfitStats, getTopSoldProductsWithProfit } from '../db';
 import { Header } from './SellScreen';
 import { getInitials } from '../utils/format';
 import { useAuthStore } from '../store/authStore';
@@ -12,7 +12,8 @@ import {
     Receipt, 
     ArrowUpRight, 
     Package,
-    Sparkles
+    Sparkles,
+    Lock,
 } from 'lucide-react-native';
 
 
@@ -22,10 +23,19 @@ export default function OverviewScreen({ onNavigateToSell }: { onNavigateToSell?
     const [filter, setFilter] = useState<TimeFilter>('today');
     const [stats, setStats] = useState<any>(null);
     const [topProducts, setTopProducts] = useState<any[]>([]);
+    const [profitStats, setProfitStats] = useState({ revenue: 0, profit: 0, profitMargin: 0 });
+    const [topProductsWithProfit, setTopProductsWithProfit] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
-    const { userId, activeRole, setShowSubscriptionModal } = useAuthStore();
+    const { userId, activeRole, stores, activeStoreOwnerId, setShowSubscriptionModal } = useAuthStore();
     const { formatAmount } = useCurrency();
     const isCashier = activeRole === 'STAFF';
+
+    // Consistent tier derivation pattern
+    const activeStore = stores.find(s => s.ownerId === activeStoreOwnerId);
+    const tier = activeStore?.tier ?? 'FREE';
+    const isGrowthPlus = tier === 'GROWTH' || tier === 'BUSINESS' || tier === 'ENTERPRISE';
+    // Section 3C — top products limit: Business+ shows all (up to 10), Growth shows 5
+    const topProductsLimit = (tier === 'BUSINESS' || tier === 'ENTERPRISE') ? 10 : 5;
 
     const loadData = useCallback(async () => {
         if (!userId) return;
@@ -37,12 +47,22 @@ export default function OverviewScreen({ onNavigateToSell }: { onNavigateToSell?
             ]);
             setStats(sData);
             setTopProducts(topP);
+
+            // Section 3A — fetch profit stats for Growth+ users
+            if (isGrowthPlus) { // TODO: Remove before launch
+                const [pStats, topWithProfit] = await Promise.all([
+                    getProfitStats(userId, filter),
+                    getTopSoldProductsWithProfit(userId, topProductsLimit, filter),
+                ]);
+                setProfitStats(pStats);
+                setTopProductsWithProfit(topWithProfit);
+            }
         } catch (e) {
             console.error(e);
         } finally {
             setRefreshing(false);
         }
-    }, [filter, userId]);
+    }, [filter, userId, isGrowthPlus, topProductsLimit]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -60,6 +80,9 @@ export default function OverviewScreen({ onNavigateToSell }: { onNavigateToSell?
             { label: 'Credit', value: payLater, color: '#EF4444', flex: Math.max((payLater/total)*100, 2) },
         ].filter(i => i.value > 0);
     };
+
+    // Section 3C — use the profit-enriched list for Growth+, fall back to basic list
+    const displayedProducts = isGrowthPlus ? topProductsWithProfit : topProducts;
 
     return (
         <View className="flex-1 bg-lightBackground">
@@ -155,6 +178,42 @@ export default function OverviewScreen({ onNavigateToSell }: { onNavigateToSell?
                                 <Text className="text-textPrimary font-black text-2xl">{formatAmount(stats?.debt || 0)}</Text>
                             </View>
                             )}
+
+                            {/* Section 3B — Profit card (Growth+ real, FREE locked teaser) */}
+                            {!isCashier && (
+                                isGrowthPlus ? ( // TODO: Remove before launch
+                                    <View className="w-[47%] bg-white p-4 rounded-3xl border border-border shadow-sm">
+                                        <View className="w-8 h-8 rounded-full bg-primaryLight items-center justify-center mb-3">
+                                            <TrendingUp size={16} color="#16A34A" />
+                                        </View>
+                                        <Text className="text-textSecondary text-[10px] font-bold uppercase mb-1">Profit</Text>
+                                        <Text className="text-textPrimary font-black text-2xl">{formatAmount(profitStats.profit)}</Text>
+                                        <Text className="text-textSecondary text-[10px] font-bold mt-1">{profitStats.profitMargin}% margin</Text>
+                                        {profitStats.profit === 0 && (
+                                            <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 4 }}>
+                                                Add cost prices to see profit
+                                            </Text>
+                                        )}
+                                    </View>
+                                ) : (
+                                    /* Locked teaser for FREE users */
+                                    <TouchableOpacity
+                                        onPress={() => setShowSubscriptionModal(true)}
+                                        className="w-[47%] bg-slate-50 p-4 rounded-3xl border border-dashed border-slate-200"
+                                    >
+                                        <View className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center mb-3">
+                                            <Lock size={16} color="#64748B" />
+                                        </View>
+                                        <Text className="text-slate-500 text-[10px] font-bold uppercase mb-1">Profit</Text>
+                                        <Text style={{ fontSize: 12, color: '#64748B', lineHeight: 16, marginTop: 2 }}>
+                                            See how much you keep after costs.
+                                        </Text>
+                                        <Text style={{ fontSize: 11, color: '#16A34A', fontWeight: '700', marginTop: 6 }}>
+                                            Growth plan
+                                        </Text>
+                                    </TouchableOpacity>
+                                )
+                            )}
                         </View>
 
                         {/* PAYMENT BREAKDOWN */}
@@ -185,16 +244,16 @@ export default function OverviewScreen({ onNavigateToSell }: { onNavigateToSell?
                             )}
                         </View>
 
-                        {/* TOP 5 PRODUCTS */}
+                        {/* TOP SELLERS */}
                         <View className="mb-8">
                             <Text className="text-textPrimary font-black text-lg mb-4">Top Sellers</Text>
-                            {topProducts.length === 0 && (
+                            {displayedProducts.length === 0 && (
                                 <View className="bg-lightBackground p-6 rounded-2xl items-center border border-border">
                                     <Package size={24} color="#64748B" />
                                     <Text className="text-textSecondary font-bold mt-2">No products sold yet.</Text>
                                 </View>
                             )}
-                            {topProducts.map((p, idx) => (
+                            {displayedProducts.map((p, idx) => (
                                 <View key={idx} className="bg-white p-4 rounded-2xl mb-2 flex-row items-center border border-border shadow-sm">
                                     <View className="w-10 h-10 rounded-xl bg-primaryLight items-center justify-center overflow-hidden mr-4">
                                         {p.image_uri ? (
@@ -206,6 +265,12 @@ export default function OverviewScreen({ onNavigateToSell }: { onNavigateToSell?
                                     <View className="flex-1">
                                         <Text className="font-bold text-sm text-textPrimary" numberOfLines={1}>{p.name}</Text>
                                         <Text className="text-textSecondary text-[10px] font-black uppercase mt-0.5">{p.total_qty} Units Sold</Text>
+                                        {/* Section 3C — per-product profit for Growth+ */}
+                                        {isGrowthPlus && p.profit != null && ( // TODO: Remove before launch
+                                            <Text style={{ fontSize: 11, color: '#16A34A', fontWeight: '700', marginTop: 2 }}>
+                                                {formatAmount(p.profit)} profit
+                                            </Text>
+                                        )}
                                     </View>
                                     <Text className="text-primary font-black text-sm">{formatAmount(p.price * p.total_qty)}</Text>
                                 </View>
