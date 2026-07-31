@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1089691046382",
+    "project_id": "chobo-707f1",
+    "storage_bucket": "chobo-707f1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1089691046382:android:c6e259ef76e7258b1abeff",
+        "android_client_info": {
+          "package_name": "com.chobo.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBUgEdzp4wGMsUS1SI40sezfOHJ5FNILWk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
