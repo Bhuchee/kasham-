@@ -56,7 +56,6 @@
     "plugins": [
       "expo-sqlite",
       "expo-web-browser",
-      "expo-notifications",
       [
         "expo-splash-screen",
         {
