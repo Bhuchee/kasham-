@@ -34,6 +34,7 @@ dist/
 # Credentials & API Keys
 **/firebase*.json
 **/google*.json
+!apps/mobile/google-services.json
 **/aws*.json
 **/service-account*.json
 *.key
