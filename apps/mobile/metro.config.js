@@ -7,15 +7,18 @@ const workspaceRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
 
-// Monorepo: watch the entire workspace
+// Monorepo: watch the entire workspace so Metro can hash files outside projectRoot
 config.watchFolders = [workspaceRoot];
+
+// Workspace root FIRST — subpath imports (e.g. react/jsx-runtime) also
+// prefer the canonical workspace version over any app-local copy.
 config.resolver.nodeModulesPaths = [
-  path.resolve(projectRoot, "node_modules"),
   path.resolve(workspaceRoot, "node_modules"),
+  path.resolve(projectRoot, "node_modules"),
 ];
 
-// Canonical paths for singletons — every require('react') in the entire
-// bundle (including NativeWind internals) must resolve to the same file.
+// The single canonical index.js for each React singleton.
+// Must point to real files with extensions — Metro needs to hash them.
 const SINGLETON_MODULES = {
   react: path.resolve(workspaceRoot, "node_modules/react/index.js"),
   "react-native": path.resolve(
@@ -25,35 +28,15 @@ const SINGLETON_MODULES = {
   "react-dom": path.resolve(workspaceRoot, "node_modules/react-dom/index.js"),
 };
 
-// extraNodeModules handles the simple name→directory redirect
-config.resolver.extraNodeModules = {
-  react: path.resolve(workspaceRoot, "node_modules/react"),
-  "react-native": path.resolve(workspaceRoot, "node_modules/react-native"),
-  "react-dom": path.resolve(workspaceRoot, "node_modules/react-dom"),
-};
-
-// resolveRequest intercepts ALL resolution calls regardless of requester path,
-// ensuring no local node_modules copy of react/react-native ever wins.
+// resolveRequest: intercept ONLY exact package-name imports.
+// Subpaths (e.g. react/jsx-runtime) are intentionally NOT intercepted here —
+// Metro must resolve them through nodeModulesPaths so it can apply its own
+// extension-matching logic and produce a valid hashed file path.
 const originalResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  // Exact match: require('react'), require('react-native'), require('react-dom')
   if (SINGLETON_MODULES[moduleName]) {
     return { filePath: SINGLETON_MODULES[moduleName], type: "sourceFile" };
   }
-  // Subpath match: require('react/jsx-runtime'), require('react-native/Libraries/...')
-  for (const [mod, filePath] of Object.entries(SINGLETON_MODULES)) {
-    if (moduleName.startsWith(mod + "/")) {
-      const subpath = moduleName.slice(mod.length + 1);
-      const resolved = path.resolve(
-        workspaceRoot,
-        "node_modules",
-        mod,
-        subpath
-      );
-      return { filePath: resolved, type: "sourceFile" };
-    }
-  }
-  // Fall back to default Metro resolution
   if (originalResolveRequest) {
     return originalResolveRequest(context, moduleName, platform);
   }
