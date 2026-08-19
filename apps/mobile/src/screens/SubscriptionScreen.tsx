@@ -6,13 +6,16 @@ import {
     TouchableOpacity,
     StyleSheet,
     SafeAreaView,
+    ActivityIndicator,
 } from 'react-native';
 import { Header } from './SellScreen';
 import { useAuthStore } from '../store/authStore';
 import { CheckCircle, X, ChevronLeft } from 'lucide-react-native';
 import AppModal from '../components/AppModal';
-
-// TODO: Replace with RevenueCat purchase flow when integrated
+import Purchases, { PurchasesPackage } from 'react-native-purchases';
+import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
+import { useSubscriptionStore } from '../store/subscriptionStore';
+import { restorePurchases } from '../services/revenueCatService';
 
 interface Plan {
     name: string;
@@ -28,9 +31,9 @@ const PLANS: Plan[] = [
     {
         name: 'Growth',
         tier: 'GROWTH',
-        monthlyPrice: 7500,
-        yearlyPrice: 6250,
-        yearlyTotal: 75000,
+        monthlyPrice: 5000,
+        yearlyPrice: 4167,
+        yearlyTotal: 50000,
         badge: 'Most popular',
         features: [
             'Unlimited products',
@@ -43,9 +46,9 @@ const PLANS: Plan[] = [
     {
         name: 'Business',
         tier: 'BUSINESS',
-        monthlyPrice: 15000,
-        yearlyPrice: 12500,
-        yearlyTotal: 150000,
+        monthlyPrice: 10000,
+        yearlyPrice: 8333,
+        yearlyTotal: 100000,
         features: [
             'Everything in Growth',
             'Up to 10 staff accounts',
@@ -65,6 +68,8 @@ export default function SubscriptionScreen({ onBack }: { onBack: () => void }) {
     const { stores, activeStoreOwnerId, activeRole } = useAuthStore();
     const [billing, setBilling] = useState<'monthly' | 'yearly'>('monthly');
     const [selectedPlanTier, setSelectedPlanTier] = useState<'GROWTH' | 'BUSINESS'>('GROWTH');
+    const [isLoading, setIsLoading] = useState(false);
+    const { refreshSubscriptionStatus } = useSubscriptionStore();
     const [modal, setModal] = useState<{
         visible: boolean;
         type: 'success' | 'error' | 'warning' | 'info';
@@ -85,7 +90,7 @@ export default function SubscriptionScreen({ onBack }: { onBack: () => void }) {
         ? `${formatNaira(selectedPlan.yearlyPrice)}/mo`
         : `${formatNaira(selectedPlan.monthlyPrice)}/mo`;
 
-    const handleUpgrade = () => {
+    const handleUpgrade = async () => {
         if (!isOwner) {
             setModal({
                 visible: true,
@@ -97,27 +102,76 @@ export default function SubscriptionScreen({ onBack }: { onBack: () => void }) {
             });
             return;
         }
-        setModal({
-            visible: true,
-            type: 'info',
-            title: 'Coming soon',
-            subtitle: 'In-app payments are being set up. Contact us at hello@usechobo.com to upgrade manually.',
-            primaryLabel: 'OK',
-            onPrimary: () => setModal(null),
-        });
-        // TODO: Replace with RevenueCat purchase flow when integrated
+
+        setIsLoading(true);
+        try {
+            // Present RevenueCat's native paywall for the best experience
+            const result = await RevenueCatUI.presentPaywall();
+            
+            if (result === PAYWALL_RESULT.PURCHASED || result === PAYWALL_RESULT.RESTORED) {
+                await refreshSubscriptionStatus();
+                setModal({
+                    visible: true,
+                    type: 'success',
+                    title: 'Welcome to Pro! 🎉',
+                    subtitle: 'Your subscription is now active. Enjoy all premium features!',
+                    primaryLabel: 'Awesome',
+                    onPrimary: () => { setModal(null); onBack(); },
+                });
+            }
+        } catch (error: any) {
+            setModal({
+                visible: true,
+                type: 'error',
+                title: 'Purchase failed',
+                subtitle: error?.message || 'Something went wrong. Please try again.',
+                primaryLabel: 'OK',
+                onPrimary: () => setModal(null),
+            });
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleRestorePurchases = () => {
-        setModal({
-            visible: true,
-            type: 'info',
-            title: 'Coming soon',
-            subtitle: 'Purchase restoration will be available once in-app payments are live.',
-            primaryLabel: 'OK',
-            onPrimary: () => setModal(null),
-        });
-        // TODO: Replace with RevenueCat restorePurchases() when integrated
+    const handleRestorePurchases = async () => {
+        setIsLoading(true);
+        try {
+            const customerInfo = await restorePurchases();
+            if (customerInfo && (
+                typeof customerInfo.entitlements.active['growth'] !== 'undefined' ||
+                typeof customerInfo.entitlements.active['business'] !== 'undefined'
+            )) {
+                await refreshSubscriptionStatus();
+                setModal({
+                    visible: true,
+                    type: 'success',
+                    title: 'Purchases restored!',
+                    subtitle: 'Your subscription has been restored successfully.',
+                    primaryLabel: 'Great',
+                    onPrimary: () => { setModal(null); onBack(); },
+                });
+            } else {
+                setModal({
+                    visible: true,
+                    type: 'info',
+                    title: 'No purchases found',
+                    subtitle: 'We couldn\'t find any previous purchases linked to your account.',
+                    primaryLabel: 'OK',
+                    onPrimary: () => setModal(null),
+                });
+            }
+        } catch (error: any) {
+            setModal({
+                visible: true,
+                type: 'error',
+                title: 'Restore failed',
+                subtitle: error?.message || 'Could not restore purchases. Please try again.',
+                primaryLabel: 'OK',
+                onPrimary: () => setModal(null),
+            });
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const tierBadgeColor = (tier: string) => {
@@ -247,14 +301,18 @@ export default function SubscriptionScreen({ onBack }: { onBack: () => void }) {
                     style={[styles.upgradeButton, currentTier === selectedPlanTier && styles.upgradeButtonDisabled]}
                     onPress={handleUpgrade}
                     activeOpacity={0.85}
-                    disabled={currentTier === selectedPlanTier}
+                    disabled={currentTier === selectedPlanTier || isLoading}
                 >
-                    <Text style={styles.upgradeButtonText}>
-                        {currentTier === selectedPlanTier
-                            ? `You're on ${selectedPlan.name}`
-                            : `Upgrade to ${selectedPlan.name} — ${billing === 'yearly' ? formatNaira(selectedPlan.yearlyTotal) + '/yr' : formatNaira(selectedPlan.monthlyPrice) + '/mo'}`
-                        }
-                    </Text>
+                    {isLoading ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                        <Text style={styles.upgradeButtonText}>
+                            {currentTier === selectedPlanTier
+                                ? `You're on ${selectedPlan.name}`
+                                : `Upgrade to ${selectedPlan.name} — ${billing === 'yearly' ? formatNaira(selectedPlan.yearlyTotal) + '/yr' : formatNaira(selectedPlan.monthlyPrice) + '/mo'}`
+                            }
+                        </Text>
+                    )}
                 </TouchableOpacity>
 
                 {/* Restore purchases */}

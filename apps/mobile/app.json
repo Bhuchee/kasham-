@@ -12,9 +12,7 @@
     "updates": {
       "enabled": false
     },
-    "splash": {
-      "backgroundColor": "#16A34A"
-    },
+
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.chobo.app"
@@ -60,7 +58,8 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#16A34A",
-          "image": "./assets/transparent.png",
+          "image": "./assets/splash-logo.png",
+          "imageWidth": 280,
           "resizeMode": "contain"
         }
       ]

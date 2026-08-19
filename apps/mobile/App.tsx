@@ -13,7 +13,6 @@ import TransactionScreen from './src/screens/TransactionScreen';
 import OverviewScreen from './src/screens/OverviewScreen';
 import MoreScreen from './src/screens/MoreScreen';
 import LoginScreen from './src/screens/LoginScreen';
-import SubscriptionScreen from './src/screens/SubscriptionScreen';
 import { useAuthStore, StoreAccess } from './src/store/authStore';
 import { useSyncStore } from './src/store/syncStore';
 import { useCurrencyStore } from './src/hooks/useCurrency';
@@ -24,6 +23,9 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import NetInfo from '@react-native-community/netinfo';
 import HandleInviteScreen from './src/screens/HandleInviteScreen';
 import AppModal from './src/components/AppModal';
+import { initializeRevenueCat, loginUser as rcLoginUser, addCustomerInfoListener } from './src/services/revenueCatService';
+import { useSubscriptionStore } from './src/store/subscriptionStore';
+import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 
 // Keep splash screen visible until database and auth are initialized
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -179,8 +181,6 @@ function MainApp() {
   };
 
   useEffect(() => {
-    SplashScreen.hideAsync().catch(() => {});
-
     const minWait = new Promise(resolve => setTimeout(resolve, 2000));
     const initTask = initDatabase()
       .then(() => useCurrencyStore.getState().initCurrency())
@@ -188,13 +188,52 @@ function MainApp() {
 
     Promise.all([initTask, minWait])
       .then(async () => {
+        // ── RevenueCat initialization ──
+        initializeRevenueCat();
+        const { userId: restoredUserId } = useAuthStore.getState();
+        if (restoredUserId) {
+          await rcLoginUser(restoredUserId);
+          await useSubscriptionStore.getState().refreshSubscriptionStatus();
+        }
+
+        // Mark ready THEN hide splash — no blank screen gap
         setReady(true);
+        await SplashScreen.hideAsync();
+
         refreshWorkspaces();
       })
       .catch(async (e) => {
         console.error(e);
+        setReady(true);
+        await SplashScreen.hideAsync();
       });
   }, []);
+
+  // ── RevenueCat: listen for real-time customer info updates ──────────────────
+  useEffect(() => {
+    const listener = addCustomerInfoListener((info) => {
+      useSubscriptionStore.getState().setCustomerInfo(info);
+    });
+    return () => listener.remove();
+  }, []);
+
+  // ── RevenueCat: present native paywall when showSubscriptionModal toggles ──
+  useEffect(() => {
+    if (!showSubscriptionModal) return;
+    const presentPaywall = async () => {
+      try {
+        const result = await RevenueCatUI.presentPaywall();
+        if (result === PAYWALL_RESULT.PURCHASED || result === PAYWALL_RESULT.RESTORED) {
+          await useSubscriptionStore.getState().refreshSubscriptionStatus();
+        }
+      } catch (e) {
+        console.warn('[RevenueCat] Paywall presentation failed:', e);
+      } finally {
+        setShowSubscriptionModal(false);
+      }
+    };
+    presentPaywall();
+  }, [showSubscriptionModal]);
 
   // ── Deep Link Handler ────────────────────────────────────────────────────────
   const handleDeepLink = (url: string | null) => {
@@ -410,14 +449,7 @@ function MainApp() {
         </View>
       )}
 
-      <Modal
-        visible={showSubscriptionModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowSubscriptionModal(false)}
-      >
-        <SubscriptionScreen onBack={() => setShowSubscriptionModal(false)} />
-      </Modal>
+      {/* Subscription modal now handled by RevenueCat paywall (see useEffect above) */}
 
       {/* ── Invite Deep Link Modal ── */}
       <Modal

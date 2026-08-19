@@ -20,7 +20,8 @@ import {
     Users,
     Zap,
     FileText,
-    Shield
+    Shield,
+    Receipt
 } from 'lucide-react-native';
 
 import PersonalInfoScreen from './PersonalInfoScreen';
@@ -31,6 +32,8 @@ import HelpSupportScreen from './HelpSupportScreen';
 import DeleteAccountScreen from './DeleteAccountScreen';
 import DevToolsScreen from './DevToolsScreen';
 import StaffManagementScreen from './StaffManagementScreen';
+import RevenueCatUI from 'react-native-purchases-ui';
+import { useSubscriptionStore } from '../store/subscriptionStore';
 
 const MenuItem = ({ icon: Icon, color, label, onPress, sublabel, danger }: any) => (
     <TouchableOpacity 
@@ -54,6 +57,9 @@ export default function MoreScreen() {
     const [activeSubScreen, setActiveSubScreen] = useState<string | null>(null);
     const [showStoreSwitcher, setShowStoreSwitcher] = useState(false);
     const [modal, setModal] = useState<{ visible: boolean; type: 'success' | 'error' | 'warning' | 'info'; title: string; subtitle?: string; primaryLabel?: string; onPrimary?: () => void; secondaryLabel?: string; onSecondary?: () => void; autoDismiss?: boolean } | null>(null);
+
+    const { isGrowthActive, isBusinessActive, currentTier: subscriptionTier } = useSubscriptionStore();
+    const isSubscribed = isGrowthActive || isBusinessActive;
 
     const isCashier = activeRole === 'STAFF';
     const isOwner = activeRole === 'OWNER';
@@ -118,6 +124,14 @@ export default function MoreScreen() {
             },
             secondaryLabel: 'Cancel',
         });
+    };
+
+    const handleManageSubscription = async () => {
+        try {
+            await RevenueCatUI.presentCustomerCenter();
+        } catch (e) {
+            console.warn('[RevenueCat] Customer Center failed:', e);
+        }
     };
 
     if (activeSubScreen === 'PersonalInfo') return <PersonalInfoScreen onBack={() => setActiveSubScreen(null)} />;
@@ -193,6 +207,15 @@ export default function MoreScreen() {
                                 sublabel="Upgrade workspace to Pro"
                                 onPress={() => setShowSubscriptionModal(true)} 
                             />
+                            {isSubscribed && (
+                                <MenuItem 
+                                    icon={Receipt} 
+                                    color="#0EA5E9" 
+                                    label="Manage Subscription" 
+                                    sublabel="Cancel, change plan, or get help"
+                                    onPress={handleManageSubscription} 
+                                />
+                            )}
                         </View>
                     </View>
                 )}

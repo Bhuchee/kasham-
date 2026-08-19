@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { logoutUser as rcLogoutUser } from '../services/revenueCatService';
 
 const TOKEN_KEY = 'jwt_token';
 const REFRESH_TOKEN_KEY = 'jwt_refresh_token';
@@ -110,6 +111,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     logout: async () => {
         try {
+            // Sign out of RevenueCat to reset customer identity
+            await rcLogoutUser();
+
             await SecureStore.deleteItemAsync(TOKEN_KEY);
             await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
             await AsyncStorage.multiRemove([

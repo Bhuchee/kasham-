@@ -41,7 +41,7 @@ export class WorkspaceService {
             });
             const tier = ownerMembership?.workspace.tier || 'FREE';
 
-            if (tier === 'FREE' || tier === 'PRO') {
+            if (tier === 'FREE' || tier === 'GROWTH' || tier === 'BUSINESS') {
                 throw new ForbiddenException(
                     'Your current plan only allows 1 store. Upgrade to Enterprise to create unlimited stores.',
                 );
@@ -153,10 +153,13 @@ export class WorkspaceService {
         });
 
         if (workspace.tier === 'FREE' && activeCount >= 1) {
-            throw new ForbiddenException('Free plan only allows the owner. Upgrade to Pro to add staff.');
+            throw new ForbiddenException('Free plan only allows the owner. Upgrade to Growth to add staff.');
         }
-        if (workspace.tier === 'PRO' && activeCount >= 3) {
-            throw new ForbiddenException('Pro plan allows up to 3 members. Upgrade to Enterprise for unlimited staff.');
+        if (workspace.tier === 'GROWTH' && activeCount >= 3) {
+            throw new ForbiddenException('Growth plan allows up to 2 staff accounts. Upgrade to Business for up to 10 staff.');
+        }
+        if (workspace.tier === 'BUSINESS' && activeCount >= 11) {
+            throw new ForbiddenException('Business plan allows up to 10 staff accounts. Upgrade to Enterprise for unlimited staff.');
         }
 
         const normalizedEmail = email.toLowerCase().trim();
@@ -431,7 +434,7 @@ export class WorkspaceService {
     }
 
     // ── Upgrade Workspace Tier ─────────────────────────────────────────────────
-    async upgradeTier(workspaceId: string, tier: 'FREE' | 'PRO' | 'ENTERPRISE') {
+    async upgradeTier(workspaceId: string, tier: 'FREE' | 'GROWTH' | 'BUSINESS' | 'ENTERPRISE') {
         const workspace = await this.prisma.workspace.update({
             where: { id: workspaceId },
             data: { tier },

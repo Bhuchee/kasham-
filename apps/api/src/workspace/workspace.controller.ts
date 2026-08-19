@@ -118,9 +118,9 @@ export class WorkspaceController {
     @Roles('OWNER')
     @HttpCode(HttpStatus.OK)
     @Post(':id/upgrade')
-    async upgradeTier(@Param('id') id: string, @Body('tier') tier: 'FREE' | 'PRO' | 'ENTERPRISE') {
-        if (!['FREE', 'PRO', 'ENTERPRISE'].includes(tier)) {
-            throw new BadRequestException('Invalid tier provided');
+    async upgradeTier(@Param('id') id: string, @Body('tier') tier: 'FREE' | 'GROWTH' | 'BUSINESS' | 'ENTERPRISE') {
+        if (!['FREE', 'GROWTH', 'BUSINESS', 'ENTERPRISE'].includes(tier)) {
+            throw new BadRequestException('Invalid tier. Must be one of: FREE, GROWTH, BUSINESS, ENTERPRISE');
         }
         return this.workspaceService.upgradeTier(id, tier);
     }

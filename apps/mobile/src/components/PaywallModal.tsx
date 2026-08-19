@@ -9,6 +9,8 @@ import {
     Dimensions,
 } from 'react-native';
 import { Lock, CheckCircle } from 'lucide-react-native';
+import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
+import { useSubscriptionStore } from '../store/subscriptionStore';
 
 const { width } = Dimensions.get('window');
 
@@ -37,6 +39,20 @@ export default function PaywallModal({
     onUpgrade,
 }: PaywallModalProps) {
     const config = TIER_CONFIG[requiredTier];
+
+    const handleUpgradePress = async () => {
+        onClose(); // Close the paywall modal first
+        
+        try {
+            const result = await RevenueCatUI.presentPaywall();
+            if (result === PAYWALL_RESULT.PURCHASED || result === PAYWALL_RESULT.RESTORED) {
+                useSubscriptionStore.getState().refreshSubscriptionStatus();
+            }
+        } catch (e) {
+            // Fallback to parent handler if paywall fails
+            onUpgrade();
+        }
+    };
 
     return (
         <Modal
@@ -71,7 +87,7 @@ export default function PaywallModal({
                             {/* Upgrade button */}
                             <TouchableOpacity
                                 style={styles.upgradeButton}
-                                onPress={onUpgrade}
+                                onPress={handleUpgradePress}
                                 activeOpacity={0.85}
                             >
                                 <Text style={styles.upgradeButtonText}>

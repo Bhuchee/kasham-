@@ -14,6 +14,7 @@ import { DebtsModule } from './debts/debts.module';
 import { CatalogueModule } from './catalogue/catalogue.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SharedModule } from './shared/shared.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { SharedModule } from './shared/shared.module';
     DebtsModule,
     CatalogueModule,
     NotificationsModule,
+    WebhooksModule,
   ],
   controllers: [AppController],
   providers: [
