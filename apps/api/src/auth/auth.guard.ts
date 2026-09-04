@@ -13,12 +13,12 @@ export class AuthGuard implements CanActivate {
             throw new UnauthorizedException();
         }
         try {
-            const payload = await this.jwtService.verifyAsync(token, {
-                secret: process.env.JWT_SECRET || 'super-secret-jwt-key'
-            });
+            // Trust the secret already configured on JwtModule (validated at
+            // boot in main.ts) — no local fallback secret.
+            const payload = await this.jwtService.verifyAsync(token);
             request['user'] = payload;
         } catch {
-            throw new UnauthorizedException();
+            throw new UnauthorizedException('Invalid or expired token');
         }
         return true;
     }

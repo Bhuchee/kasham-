@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Linking, Platform } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useCartStore } from '../store/cartStore';
 import { StoreSwitcherSheet } from '../components/StoreSwitcherSheet';
@@ -127,10 +127,34 @@ export default function MoreScreen() {
     };
 
     const handleManageSubscription = async () => {
+        if (Platform.OS === 'android') {
+            const isGrowth = subscriptionTier === 'GROWTH';
+            setModal({
+                visible: true,
+                type: 'info',
+                title: 'Manage Subscription',
+                subtitle: `You are currently on the ${subscriptionTier || 'PRO'} plan. Manage your subscription or cancel anytime on Google Play.${isGrowth ? '\n\nNeed more staff accounts or store branches? Upgrade to Business anytime.' : ''}`,
+                primaryLabel: 'Manage on Google Play',
+                onPrimary: () => {
+                    Linking.openURL('https://play.google.com/store/account/subscriptions?package=com.chobo.app').catch(() => {
+                        Linking.openURL('https://play.google.com/store/account/subscriptions');
+                    });
+                },
+                secondaryLabel: isGrowth ? 'Upgrade to Business' : 'Close',
+                onSecondary: () => {
+                    if (isGrowth) {
+                        setShowSubscriptionModal(true);
+                    }
+                },
+            });
+            return;
+        }
+
         try {
             await RevenueCatUI.presentCustomerCenter();
         } catch (e) {
             console.warn('[RevenueCat] Customer Center failed:', e);
+            Linking.openURL('https://apps.apple.com/account/subscriptions').catch(() => {});
         }
     };
 

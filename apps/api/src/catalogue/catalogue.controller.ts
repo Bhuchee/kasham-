@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Body, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard } from '../auth/auth.guard';
 
@@ -219,7 +219,8 @@ function normalizeCategory(rawCategory: string | null): string {
   return 'Provisions';
 }
 
-@UseGuards(AuthGuard)
+// Lookup/search stay public — this is a shared, non-sensitive barcode
+// database. Only the write path (contribute) requires auth.
 @Controller('catalogue')
 export class CatalogueController {
   constructor(private prisma: PrismaService) {}
@@ -293,24 +294,51 @@ export class CatalogueController {
     }));
   }
 
+  @UseGuards(AuthGuard)
   @Post('contribute')
-  async contribute(@Body() data: { barcode: string; name: string; brand?: string; imageUrl?: string; category?: string }) {
-    const saved = await this.prisma.catalogueProduct.upsert({
-      where: { barcode: data.barcode },
-      update: {
-        brand: data.brand ?? undefined,
-        // Only update imageUrl if we're contributing a Cloudinary URL or there's no existing image
-        imageUrl: data.imageUrl ?? undefined,
-        category: data.category ?? undefined,
-      },
-      create: {
-        barcode: data.barcode,
-        name: data.name,
-        brand: data.brand ?? null,
-        imageUrl: data.imageUrl ?? null,
-        category: data.category ?? null,
-      },
-    });
+  async contribute(
+    @Body() data: { barcode: string; name: string; brand?: string; imageUrl?: string; category?: string },
+    @Request() req: any,
+  ) {
+    if (!data.barcode || data.barcode.length < 8 || data.barcode.length > 20) {
+      throw new BadRequestException('Invalid barcode format');
+    }
+    if (!data.name || data.name.trim().length < 2) {
+      throw new BadRequestException('Product name is required');
+    }
+
+    const userId = req.user.sub;
+    const existing = await this.prisma.catalogueProduct.findUnique({ where: { barcode: data.barcode } });
+
+    // Never let a contribution clobber existing good data — only fill in
+    // fields that are currently missing. Protects the shared catalogue from
+    // a buggy or bad-faith authenticated client overwriting correct entries.
+    let saved;
+    if (existing) {
+      saved = await this.prisma.catalogueProduct.update({
+        where: { barcode: data.barcode },
+        data: {
+          brand: existing.brand ?? data.brand,
+          imageUrl: existing.imageUrl ?? data.imageUrl,
+          category: existing.category ?? data.category,
+          lastEditedBy: userId,
+          lastEditedAt: new Date(),
+        },
+      });
+    } else {
+      saved = await this.prisma.catalogueProduct.create({
+        data: {
+          barcode: data.barcode,
+          name: data.name,
+          brand: data.brand ?? null,
+          imageUrl: data.imageUrl ?? null,
+          category: data.category ?? null,
+          contributedBy: userId,
+          lastEditedBy: userId,
+          lastEditedAt: new Date(),
+        },
+      });
+    }
 
     // If contributed imageUrl is a third-party URL, migrate it in background
     if (saved.imageUrl && !isCloudinaryUrl(saved.imageUrl)) {

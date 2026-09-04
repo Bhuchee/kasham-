@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { StaffActivityAction } from '../workspace/workspace.service';
+import { StaffActivityAction } from '../shared/enums';
+import { toKobo } from '../shared/money';
 
 @Injectable()
 export class SalesService {
@@ -13,16 +14,21 @@ export class SalesService {
     async syncData(changes: any, lastPulledAt: number, workspaceId: string, staffId: string) {
         if (changes?.sales?.created?.length > 0) {
             await this.prisma.sale.createMany({
-                data: changes.sales.created.map((s: any) => ({
-                    id: s.id,
-                    workspaceId,
-                    staffId,       // track which staff member made the sale
-                    total: s.total,
-                    discountAmount: s.discount_amount || s.discountAmount || 0,
-                    paymentType: s.payment_type || s.paymentType,
-                    synced: true,
-                    timestamp: s.timestamp ? new Date(s.timestamp) : new Date(),
-                })),
+                data: changes.sales.created.map((s: any) => {
+                    const discountAmount = s.discount_amount || s.discountAmount || 0;
+                    return {
+                        id: s.id,
+                        workspaceId,
+                        staffId,       // track which staff member made the sale
+                        total: s.total,
+                        totalKobo: toKobo(s.total),
+                        discountAmount,
+                        discountAmountKobo: toKobo(discountAmount),
+                        paymentType: s.payment_type || s.paymentType,
+                        synced: true,
+                        timestamp: s.timestamp ? new Date(s.timestamp) : new Date(),
+                    };
+                }),
                 skipDuplicates: true,
             });
 
@@ -102,52 +108,45 @@ export class SalesService {
                     productName: si.product_name || si.productName,
                     quantity: si.quantity,
                     price: si.price,
+                    priceKobo: toKobo(si.price),
                 })),
                 skipDuplicates: true,
             });
 
-            // FIX 6 — Low-stock / out-of-stock push notifications (workspace-scoped)
-            const soldProductIds = [...new Set(
-                changes.saleItems.created
-                    .map((si: any) => si.user_product_id || si.userProductId)
-                    .filter(Boolean)
-            )] as string[];
-
-            for (const productId of soldProductIds) {
-                try {
-                    const product = await (this.prisma as any).product.findUnique({
-                        where: { id: productId },
-                        select: { name: true, stock: true, workspaceId: true },
-                    });
-                    if (!product || product.workspaceId !== workspaceId) continue;
-                    if (product.stock == null) continue; // stock not tracked server-side for this product
-
-                    const LOW_STOCK_THRESHOLD = 5; // TODO: read from workspace.lowStockThreshold when field is added
-
-                    if (product.stock === 0) {
-                        await this.notificationsService.sendToWorkspace(
-                            workspaceId,
-                            'Out of stock',
-                            `${product.name} is now out of stock`,
-                            undefined,
-                            ['OWNER', 'MANAGER', 'STAFF'],
-                        );
-                    } else if (product.stock <= LOW_STOCK_THRESHOLD) {
-                        await this.notificationsService.sendToWorkspace(
-                            workspaceId,
-                            'Low stock alert',
-                            `${product.name} is running low — only ${product.stock} left`,
-                            undefined,
-                            ['OWNER', 'MANAGER', 'STAFF'],
-                        );
-                    }
-                } catch {
-                    // Non-blocking — never fail a sale sync due to notification errors
-                }
-            }
+            // Stock is authoritative via ProductsService.syncUserProducts (which
+            // receives the client's already-decremented value and already sends
+            // its own low-stock/out-of-stock notifications there). This block
+            // used to attempt a second, independent stock read here — it always
+            // threw (wrong Prisma model name) and was silently swallowed, but
+            // implementing it for real would double-decrement stock on every
+            // sale sync, since the product-sync push already applies the
+            // decrement. Removed rather than fixed in place.
         }
 
-        return { changes: {}, timestamp: Date.now() };
+        const since = lastPulledAt ? new Date(lastPulledAt) : new Date(0);
+        return this.getSyncChanges(workspaceId, since);
+    }
+
+    // Pull-sync: returns everything in this workspace changed since the
+    // client's last successful pull, so a second device (or this same
+    // device after being offline) can catch up on changes made elsewhere.
+    // Note: the mobile client does not yet merge this response into its
+    // local SQLite store — that merge logic (conflict handling for a sale
+    // referencing a product edited/deleted elsewhere, etc.) is a larger
+    // follow-up. This makes the data available; it isn't consumed yet.
+    async getSyncChanges(workspaceId: string, since: Date) {
+        const changedProducts = await this.prisma.userProduct.findMany({
+            where: { workspaceId, updatedAt: { gt: since } },
+        });
+        const changedSales = await this.prisma.sale.findMany({
+            where: { workspaceId, updatedAt: { gt: since } },
+            include: { items: true },
+        });
+
+        return {
+            changes: { products: changedProducts, sales: changedSales },
+            timestamp: Date.now(),
+        };
     }
 
 

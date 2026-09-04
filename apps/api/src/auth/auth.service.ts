@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from './email.service';
+import { EmailService } from '../shared/email.service';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, createHash } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
@@ -334,12 +334,17 @@ export class AuthService {
             const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
             if (!user) throw new UnauthorizedException();
 
-            const storedHash = await this.redisService.get(`refresh:${user.id}`);
-            const incomingHash = createHash('sha256').update(refreshToken).digest('hex');
-            
-            if (!storedHash || storedHash !== incomingHash) {
-                throw new UnauthorizedException('Refresh token revoked or invalid');
+            if (this.redisService.isAvailable()) {
+                const storedHash = await this.redisService.get(`refresh:${user.id}`);
+                const incomingHash = createHash('sha256').update(refreshToken).digest('hex');
+
+                if (!storedHash || storedHash !== incomingHash) {
+                    throw new UnauthorizedException('Refresh token revoked or invalid');
+                }
             }
+            // If Redis is unavailable, we can't check revocation — fall back to
+            // trusting the JWT's own signature and expiry rather than hard-failing
+            // every refresh in the app during a Redis outage.
 
             const tokens = await this.generateTokens(user.id, user.email);
             const workspaces = await this.getUserWorkspaces(user.id);

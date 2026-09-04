@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -37,7 +37,7 @@ import {
     Sparkles,
     CheckSquare,
 } from 'lucide-react-native';
-import CountryPicker, { CountryCode } from 'react-native-country-picker-modal';
+import CountryPicker, { CountryCode, Country } from 'react-native-country-picker-modal';
 import { saveCountryCode } from '../hooks/useCurrency';
 import AppModal from '../components/AppModal';
 import { ChevronLeft } from 'lucide-react-native';
@@ -113,7 +113,8 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
     const [businessName, setBusinessName] = useState('');
     const [businessType, setBusinessType] = useState(BUSINESS_TYPES[0]);
     const [otherBusinessType, setOtherBusinessType] = useState('');
-    const [countryCode, setCountryCode] = useState<CountryCode>('NG');
+    const [countryCode, setCountryCode] = useState<CountryCode | null>(null);
+    const [countryName, setCountryName] = useState('');
     const [callingCode, setCallingCode] = useState('234');
     const [tosAccepted, setTosAccepted] = useState(false);
 
@@ -122,6 +123,7 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
 
     // OTP State
     const [otpCode, setOtpCode] = useState('');
+    const [otpError, setOtpError] = useState('');
     const [countdown, setCountdown] = useState(60);
     const [verifyEmailAddress, setVerifyEmailAddress] = useState('');
     const [resendStatus, setResendStatus] = useState('');
@@ -219,16 +221,21 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
     const redirectUri = AuthSession.makeRedirectUri({
         scheme: 'chobo',
         path: 'oauthredirect',
+        native: 'chobo://oauthredirect',
     });
 
     const [googleRequest, googleResponse, googlePromptAsync] = Google.useAuthRequest({
+        redirectUri,
         webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
         androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
         iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
     });
 
     useEffect(() => {
-        if (googleResponse?.type === 'success') {
+        if (!googleResponse) return;
+        console.log('[Google OAuth] Raw response:', JSON.stringify(googleResponse, null, 2));
+
+        if (googleResponse.type === 'success') {
             const idToken = googleResponse.authentication?.idToken;
             if (!idToken) {
                 setModalConfig({
@@ -240,6 +247,14 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
                 return;
             }
             handleGoogleAuth(idToken);
+        } else if (googleResponse.type === 'error') {
+            console.warn('[Google OAuth] Error response:', googleResponse.error);
+            setModalConfig({
+                visible: true,
+                type: 'error',
+                title: 'Google sign-in failed',
+                subtitle: googleResponse.error?.message || 'Google authentication was not completed.',
+            });
         }
     }, [googleResponse]);
 
@@ -461,7 +476,7 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
     // ── Verify OTP Action ─────────────────────────────────────────────────────
     const handleVerifyOtp = async (code: string) => {
         setLoading(true);
-        setSignupError('');
+        setOtpError('');
         try {
             const res = await fetch(`${API_URL}/auth/verify-email-code`, {
                 method: 'POST',
@@ -491,10 +506,12 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
                     setStep('login');
                 }
             } else {
-                setSignupError(data.message || 'OTP verification failed.');
+                setOtpCode('');
+                setOtpError(data.message || 'Incorrect code. Please try again.');
             }
         } catch (e) {
-            setSignupError('Could not reach the server. Please check your connection.');
+            setOtpCode('');
+            setOtpError('Could not reach the server. Please check your connection.');
         } finally {
             setLoading(false);
         }
@@ -903,14 +920,15 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
                             withFilter
                             withCallingCode
                             withAlphaFilter
-                            countryCode={countryCode}
-                            onSelect={(country) => {
+                            countryCode={countryCode ?? 'NG'}
+                            onSelect={(country: Country) => {
                                 setCountryCode(country.cca2);
+                                setCountryName(country.name as string);
                                 setCallingCode(country.callingCode[0]);
                             }}
                         />
-                        <Text className="text-[#0F172A] text-[15px] ml-2">
-                            {countryCode === 'NG' ? 'Nigeria' : countryCode === 'GH' ? 'Ghana' : 'Other'}
+                        <Text className={`text-[15px] ml-2 ${countryName ? 'text-[#0F172A]' : 'text-[#94A3B8]'}`}>
+                            {countryName || 'Select your country'}
                         </Text>
                     </View>
                 </View>
@@ -991,13 +1009,13 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
                 {/* Submit button */}
                 <TouchableOpacity
                     onPress={handleSignupStep1}
-                    disabled={loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid || !tosAccepted}
+                    disabled={loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid || !tosAccepted || !countryCode}
                     className={`w-full h-[52px] rounded-xl items-center justify-center mb-6 ${
-                        loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid || !tosAccepted ? 'bg-[#E5E7EB]' : 'bg-[#16A34A]'
+                        loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid || !tosAccepted || !countryCode ? 'bg-[#E5E7EB]' : 'bg-[#16A34A]'
                     }`}
                 >
-                    {loading ? <ActivityIndicator color={loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid || !tosAccepted ? "#94A3B8" : "white"} /> : 
-                    <Text className={`font-semibold text-[15px] ${loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid || !tosAccepted ? 'text-[#94A3B8]' : 'text-white'}`}>Create account</Text>}
+                    {loading ? <ActivityIndicator color={loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid || !tosAccepted || !countryCode ? "#94A3B8" : "white"} /> : 
+                    <Text className={`font-semibold text-[15px] ${loading || !name.trim() || !email.trim() || !password.trim() || !isPasswordValid || !tosAccepted || !countryCode ? 'text-[#94A3B8]' : 'text-white'}`}>Create account</Text>}
                 </TouchableOpacity>
 
                 {/* Divider */}
@@ -1036,22 +1054,57 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
         </KeyboardAvoidingView>
     );
 
+    const otpInputRefs = useRef<(TextInput | null)[]>([null, null, null, null, null, null]);
+
     const renderVerifyEmail = () => {
-        const boxes = [];
-        for (let i = 0; i < 6; i++) {
-            const char = otpCode[i] || '';
-            const isFocused = otpCode.length === i;
-            boxes.push(
-                <View
-                    key={i}
-                    className={`w-12 h-14 bg-white border-2 rounded-xl items-center justify-center ${
-                        isFocused ? 'border-primary' : 'border-border'
-                    }`}
-                >
-                    <Text className="text-xl font-bold text-textPrimary">{char}</Text>
-                </View>
-            );
-        }
+        const digits = otpCode.padEnd(6, ' ').split('').slice(0, 6);
+
+        const handleOtpChange = (text: string, index: number) => {
+            // Handle paste: if more than 1 character arrives on any box, treat it as a full paste
+            const clean = text.replace(/[^0-9]/g, '');
+            if (clean.length > 1) {
+                const pasted = clean.slice(0, 6);
+                setOtpError('');
+                setOtpCode(pasted);
+                const nextFocus = Math.min(pasted.length, 5);
+                otpInputRefs.current[nextFocus]?.focus();
+                if (pasted.length === 6) {
+                    handleVerifyOtp(pasted);
+                }
+                return;
+            }
+
+            // Single digit entry
+            const newDigits = otpCode.split('');
+            newDigits[index] = clean;
+            const newCode = newDigits.join('').slice(0, 6);
+            setOtpError('');
+            setOtpCode(newCode);
+
+            if (clean && index < 5) {
+                otpInputRefs.current[index + 1]?.focus();
+            }
+            if (newCode.length === 6) {
+                handleVerifyOtp(newCode);
+            }
+        };
+
+        const handleOtpKeyPress = (key: string, index: number) => {
+            if (key === 'Backspace') {
+                if (otpCode[index]) {
+                    // Clear the current digit
+                    const newDigits = otpCode.split('');
+                    newDigits[index] = '';
+                    setOtpCode(newDigits.join(''));
+                } else if (index > 0) {
+                    // Move to previous box and clear it
+                    const newDigits = otpCode.split('');
+                    newDigits[index - 1] = '';
+                    setOtpCode(newDigits.join(''));
+                    otpInputRefs.current[index - 1]?.focus();
+                }
+            }
+        };
 
         return (
             <View className="flex-1 bg-lightBackground px-6 justify-center items-center">
@@ -1063,25 +1116,49 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
                     Enter the 6-digit verification code sent to <Text className="text-textPrimary">{verifyEmailAddress}</Text>
                 </Text>
 
-                {/* OTP Boxes Grid */}
-                <View className="relative w-full items-center mb-8">
-                    <View className="flex-row justify-center gap-2">{boxes}</View>
-                    <TextInput
-                        style={StyleSheet.absoluteFill}
-                        value={otpCode}
-                        onChangeText={(t) => {
-                            const clean = t.replace(/[^0-9]/g, '').slice(0, 6);
-                            setOtpCode(clean);
-                            if (clean.length === 6) {
-                                handleVerifyOtp(clean);
-                            }
-                        }}
-                        keyboardType="number-pad"
-                        maxLength={6}
-                        caretHidden
-                    />
+                {/* OTP Boxes — per-box TextInput with refs */}
+                <View className="flex-row justify-center gap-2 mb-3">
+                    {[0, 1, 2, 3, 4, 5].map((i) => {
+                        const digit = otpCode[i] || '';
+                        const isFocused = otpCode.length === i;
+                        const hasError = !!otpError;
+                        return (
+                            <TextInput
+                                key={i}
+                                ref={(el) => { otpInputRefs.current[i] = el; }}
+                                value={digit}
+                                onChangeText={(t) => handleOtpChange(t, i)}
+                                onKeyPress={({ nativeEvent }) => handleOtpKeyPress(nativeEvent.key, i)}
+                                keyboardType="number-pad"
+                                maxLength={6}
+                                selectTextOnFocus
+                                style={{
+                                    width: 48,
+                                    height: 56,
+                                    borderWidth: 2,
+                                    borderRadius: 12,
+                                    borderColor: hasError ? '#EF4444' : isFocused ? '#16A34A' : '#E2E8F0',
+                                    backgroundColor: '#FFFFFF',
+                                    textAlign: 'center',
+                                    fontSize: 22,
+                                    fontWeight: '700',
+                                    color: '#0F172A',
+                                }}
+                            />
+                        );
+                    })}
                 </View>
 
+                {/* Inline error */}
+                {otpError ? (
+                    <Text style={{ color: '#EF4444', fontSize: 13, fontWeight: '700', marginBottom: 16, textAlign: 'center' }}>
+                        {otpError}
+                    </Text>
+                ) : (
+                    <View style={{ height: 32 }} />
+                )}
+
+                {/* Resend timer / link */}
                 {countdown > 0 ? (
                     <Text className="text-textSecondary font-bold text-sm mb-6">
                         Resend code in <Text className="text-primary font-black">{countdown}s</Text>
@@ -1091,6 +1168,20 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
                         <Text className="text-primary font-black text-sm">Resend Verification Code</Text>
                     </TouchableOpacity>
                 )}
+
+                {/* Verify button — explicit fallback for users who want to review before submitting */}
+                <TouchableOpacity
+                    onPress={() => { if (otpCode.length === 6) handleVerifyOtp(otpCode); }}
+                    disabled={otpCode.length < 6 || loading}
+                    className={`w-full h-[52px] rounded-xl items-center justify-center mb-4 ${
+                        otpCode.length < 6 || loading ? 'bg-[#E5E7EB]' : 'bg-[#16A34A]'
+                    }`}
+                >
+                    {loading
+                        ? <ActivityIndicator color={otpCode.length < 6 ? '#94A3B8' : 'white'} />
+                        : <Text className={`font-bold text-base ${otpCode.length < 6 || loading ? 'text-[#94A3B8]' : 'text-white'}`}>Verify code</Text>
+                    }
+                </TouchableOpacity>
 
                 <TouchableOpacity
                     onPress={() => Linking.openURL('mailto:').catch(() => {})}
@@ -1324,7 +1415,7 @@ export default function LoginScreen({ resetToken, onClearResetToken }: LoginScre
                 <View className="items-center justify-center">
                     <Image 
                         source={require('../../assets/logo-white.png')} 
-                        style={{ width: 280, height: 130, resizeMode: 'contain' }} 
+                        style={{ width: 220, height: 140, resizeMode: 'contain' }} 
                     />
                     <Text className="text-white/80 font-bold text-sm mt-3 uppercase tracking-widest">
                         Sell. Track. Grow.

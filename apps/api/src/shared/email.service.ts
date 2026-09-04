@@ -32,7 +32,7 @@ export class EmailService {
                         <h2 style="color: #16a34a; margin-bottom: 8px;">Welcome to Chobo${name ? `, ${name}` : ''}!</h2>
                         <p style="color: #374151; margin-bottom: 24px;">Click the button below to verify your email address and activate your account.</p>
                         <a href="${verifyUrl}" style="display: inline-block; background: #16a34a; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; margin-bottom: 16px;">Verify Email Address</a>
-                        
+
                         ${code ? `
                         <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; text-align: center; margin-bottom: 16px;">
                             <p style="margin: 0 0 8px; color: #64748b; font-size: 12px; font-weight: bold; text-transform: uppercase;">Verification Code</p>
@@ -131,7 +131,7 @@ export class EmailService {
                         </div>
                         <h2 style="color: #0f172a; text-align: center; margin-bottom: 8px;">You're invited to Chobo</h2>
                         <p style="color: #64748b; text-align: center; margin-bottom: 24px;">You've been invited to join <strong style="color: #0f172a;">${workspaceName}</strong> as a <strong style="color: #16a34a;">${roleLabel}</strong>.</p>
-                        
+
                         <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
                             <p style="color: #374151; margin: 0 0 12px; font-size: 14px;">
                                 Chobo is a business management app that helps you track sales, manage inventory, and more.
@@ -141,7 +141,7 @@ export class EmailService {
                                 Accept Invitation
                             </a>
                         </div>
-                        
+
                         <p style="color: #94a3b8; font-size: 12px; text-align: center; line-height: 1.5;">
                             This invitation expires in 7 days.<br>
                             If you don't have Chobo installed, download it first, then tap Accept Invitation.<br>
@@ -199,7 +199,7 @@ export class EmailService {
                         </div>
                         <h2 style="color: #0f172a; text-align: center; margin-bottom: 8px;">New Workspace Invitation</h2>
                         <p style="color: #374151; margin-bottom: 24px;">${greeting} You've been invited to join <strong>${workspaceName}</strong> as a <strong style="color: #16a34a;">${roleLabel}</strong>.</p>
-                        
+
                         <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
                             <p style="color: #374151; margin: 0 0 16px; font-size: 14px;">
                                 Since you already have a Chobo account, simply open the app and tap the button below to accept or decline this invitation.
@@ -208,7 +208,7 @@ export class EmailService {
                                 Open in Chobo
                             </a>
                         </div>
-                        
+
                         <p style="color: #94a3b8; font-size: 12px; text-align: center; line-height: 1.5;">
                             This invitation expires in 7 days.<br>
                             If you didn't expect this invitation, you can safely ignore this email.

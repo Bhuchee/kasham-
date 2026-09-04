@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { toKobo } from '../shared/money';
 
 @Injectable()
 export class PaymentsService {
@@ -19,6 +20,7 @@ export class PaymentsService {
             where: { id: data.id },
             update: {
                 amount: data.amount,
+                amountKobo: toKobo(data.amount),
                 senderName: data.senderName,
                 matched: data.matched,
                 saleId: data.saleId,
@@ -26,6 +28,7 @@ export class PaymentsService {
             create: {
                 id: data.id,
                 amount: data.amount,
+                amountKobo: toKobo(data.amount),
                 senderName: data.senderName,
                 matched: data.matched,
                 saleId: data.saleId,

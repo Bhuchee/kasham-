@@ -1,7 +1,8 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { StaffActivityAction } from '../workspace/workspace.service';
+import { StaffActivityAction } from '../shared/enums';
+import { toKobo } from '../shared/money';
 
 @Injectable()
 export class ProductsService {
@@ -29,15 +30,33 @@ export class ProductsService {
         for (const p of products) {
             const oldProduct = await this.prisma.userProduct.findUnique({
                 where: { id: p.id },
-                select: { stock: true },
+                select: { stock: true, updatedAt: true },
             });
 
+            // Version guard: if this device's copy is older than what's
+            // already on the server, keep the server's data rather than
+            // clobbering a fresher edit from another device. Only applies
+            // when the incoming payload actually carries an updatedAt —
+            // callers that omit it fall back to the previous overwrite
+            // behavior rather than being silently rejected.
+            if (oldProduct && p.updatedAt) {
+                const incoming = new Date(p.updatedAt);
+                if (incoming.getTime() < oldProduct.updatedAt.getTime()) {
+                    const current = await this.prisma.userProduct.findUnique({ where: { id: p.id } });
+                    results.push(current);
+                    continue;
+                }
+            }
+
+            const sellingPrice = p.sellingPrice ?? p.price;
             const result = await this.prisma.userProduct.upsert({
                 where: { id: p.id },
                 update: {
                     name: p.name,
-                    sellingPrice: p.sellingPrice ?? p.price,
+                    sellingPrice,
+                    sellingPriceKobo: toKobo(sellingPrice),
                     costPrice: p.costPrice ?? null,
+                    costPriceKobo: toKobo(p.costPrice),
                     stock: p.stock,
                     imageUrl: p.imageUrl ?? null,
                     barcode: p.barcode ?? null,
@@ -48,8 +67,10 @@ export class ProductsService {
                     id: p.id,
                     workspaceId,
                     name: p.name,
-                    sellingPrice: p.sellingPrice ?? p.price,
+                    sellingPrice,
+                    sellingPriceKobo: toKobo(sellingPrice),
                     costPrice: p.costPrice ?? null,
+                    costPriceKobo: toKobo(p.costPrice),
                     stock: p.stock ?? 0,
                     imageUrl: p.imageUrl ?? null,
                     barcode: p.barcode ?? null,
@@ -114,12 +135,21 @@ export class ProductsService {
         });
         if (!oldProduct) throw new ForbiddenException('Product not found in this workspace');
 
+        // This is a partial PATCH — a field that's `undefined` here means
+        // "leave it alone" (Prisma skips undefined in update()). The kobo
+        // mirror must follow the exact same skip-vs-set rule per field, or a
+        // patch that only changes `stock` would wipe sellingPriceKobo/
+        // costPriceKobo to null even though sellingPrice/costPrice are
+        // correctly left untouched.
+        const updateSellingPrice = data.sellingPrice ?? data.price;
         const updated = await this.prisma.userProduct.update({
             where: { id },
             data: {
                 name: data.name,
-                sellingPrice: data.sellingPrice ?? data.price,
+                sellingPrice: updateSellingPrice,
+                sellingPriceKobo: updateSellingPrice !== undefined ? toKobo(updateSellingPrice) : undefined,
                 costPrice: data.costPrice,
+                costPriceKobo: data.costPrice !== undefined ? toKobo(data.costPrice) : undefined,
                 stock: data.stock,
                 imageUrl: data.imageUrl,
                 barcode: data.barcode,

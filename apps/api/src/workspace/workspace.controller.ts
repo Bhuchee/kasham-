@@ -113,21 +113,26 @@ export class WorkspaceController {
     }
 
     // ── Upgrade Workspace Tier ─────────────────────────────────────────────────
-    
+    // Disabled: tier changes must come from the RevenueCat webhook (paying
+    // customers) or the admin-only route in admin-workspace.controller.ts
+    // (manual Enterprise provisioning). This route never mutated data by
+    // any other means, so it is intentionally kept — returning a clear
+    // error — rather than removed, in case any older client still calls it.
     @UseGuards(RolesGuard)
     @Roles('OWNER')
     @HttpCode(HttpStatus.OK)
     @Post(':id/upgrade')
-    async upgradeTier(@Param('id') id: string, @Body('tier') tier: 'FREE' | 'GROWTH' | 'BUSINESS' | 'ENTERPRISE') {
-        if (!['FREE', 'GROWTH', 'BUSINESS', 'ENTERPRISE'].includes(tier)) {
-            throw new BadRequestException('Invalid tier. Must be one of: FREE, GROWTH, BUSINESS, ENTERPRISE');
-        }
-        return this.workspaceService.upgradeTier(id, tier);
+    async upgradeTier() {
+        throw new ForbiddenException(
+            'Tier changes must go through a RevenueCat purchase or the admin panel',
+        );
     }
 
-    // GET /workspaces/:id — get workspace details
+    // GET /workspaces/:id — get workspace details (any active member may view)
     @Get(':id')
-    getWorkspace(@Param('id') id: string) {
+    async getWorkspace(@Param('id') id: string, @Request() req: any) {
+        const isMember = await this.workspaceService.isMember(id, req.user.sub);
+        if (!isMember) throw new ForbiddenException('You do not have access to this workspace');
         return this.workspaceService.getById(id);
     }
 

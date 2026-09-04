@@ -120,16 +120,17 @@ export default function InventoryScreen({ initialBarcode, onClearBarcode }: Inve
 
     const loadData = useCallback(async () => {
         if (!userId) return;
+        const workspaceId = activeStoreOwnerId || userId;
         const threshold = parseInt((await AsyncStorage.getItem('lowStockThreshold')) || '5', 10);
         const [rows, sum, count] = await Promise.all([
-            getProducts(userId),
-            getStockSummary(userId, threshold),
-            getProductCount(userId),
+            getProducts(workspaceId, userId),
+            getStockSummary(workspaceId, userId, threshold),
+            getProductCount(workspaceId, userId),
         ]);
         setProducts(rows);
         setSummary(sum);
         setProductCount(count);
-    }, [userId]);
+    }, [userId, activeStoreOwnerId]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -411,7 +412,7 @@ export default function InventoryScreen({ initialBarcode, onClearBarcode }: Inve
 
         // Section 1D — block FREE tier at 50-product limit
         if (!editingProduct && tier === 'FREE') { // TODO: Remove before launch
-            const count = await getProductCount(userId || '');
+            const count = await getProductCount(activeStoreOwnerId || userId || '', userId || '');
             if (count >= 50) {
                 setModal({
                     visible: true,
@@ -436,7 +437,7 @@ export default function InventoryScreen({ initialBarcode, onClearBarcode }: Inve
             if (editingProduct) {
                 await updateProduct(editingProduct.id, name, parseFloat(price), parseInt(stock, 10), barcode || null, imageUri, parsedCostPrice, finalCategory);
             } else {
-                await createProduct(uuidv4(), name, parseFloat(price), parseInt(stock, 10), barcode || null, imageUri, userId || '', parsedCostPrice, finalCategory);
+                await createProduct(uuidv4(), name, parseFloat(price), parseInt(stock, 10), barcode || null, imageUri, userId || '', parsedCostPrice, finalCategory, activeStoreOwnerId || userId || '');
             }
 
             // Contribute to the shared catalogue in background if online

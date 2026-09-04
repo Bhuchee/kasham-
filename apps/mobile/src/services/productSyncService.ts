@@ -1,7 +1,13 @@
 import { API_URL } from '../config';
 import { createProduct, updateProduct, getProducts } from '../db';
 
-export const syncProductsFromBackend = async (token: string, userId: string) => {
+// NOTE: unused — zero call sites anywhere in the app (confirmed by grep),
+// and calls a `/products` endpoint that doesn't exist in the current API
+// (the real one is `/user-products/restore`; see syncService.ts's
+// pushProductsToBackend for the actual, working pull). Left in place, not
+// deleted — only fixed to compile — since removing dead code wasn't asked
+// for in this pass.
+export const syncProductsFromBackend = async (token: string, userId: string, workspaceId: string) => {
     try {
         const res = await fetch(`${API_URL}/products`, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -9,7 +15,7 @@ export const syncProductsFromBackend = async (token: string, userId: string) => 
         if (!res.ok) return;
 
         const globalProducts = await res.json();
-        const localProducts = await getProducts(userId);
+        const localProducts = await getProducts(workspaceId, userId);
 
         for (const gp of globalProducts) {
             const exists = localProducts.find((lp: any) => lp.barcode === gp.barcode || lp.id === gp.id);

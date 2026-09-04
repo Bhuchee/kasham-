@@ -1,9 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { Ratelimit } from '@upstash/ratelimit';
 import { RedisService } from '../../shared/redis.service';
 
 @Injectable()
 export class AuthRateLimitGuard implements CanActivate {
+    private readonly logger = new Logger(AuthRateLimitGuard.name);
     // Lazily initialized after RedisService.onModuleInit() completes
     private ratelimit: Ratelimit | null = null;
 
@@ -22,6 +23,11 @@ export class AuthRateLimitGuard implements CanActivate {
     }
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
+        if (!this.redisService.isAvailable()) {
+            this.logger.warn('Redis unavailable — skipping auth rate limit check');
+            return true;
+        }
+
         const request = context.switchToHttp().getRequest();
         const ip =
             request.headers['x-forwarded-for']?.split(',')[0]?.trim() ||

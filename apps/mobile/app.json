@@ -54,11 +54,12 @@
     "plugins": [
       "expo-sqlite",
       "expo-web-browser",
+      "expo-notifications",
       [
         "expo-splash-screen",
         {
           "backgroundColor": "#16A34A",
-          "image": "./assets/splash-logo.png",
+          "image": "./assets/logo-white.png",
           "imageWidth": 280,
           "resizeMode": "contain"
         }

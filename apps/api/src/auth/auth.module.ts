@@ -1,12 +1,14 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-import { EmailService } from './email.service';
 import { JwtModule } from '@nestjs/jwt';
 import { RolesGuard } from './roles.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { WorkspaceModule } from '../workspace/workspace.module';
 
+// No forwardRef needed: EmailService (WorkspaceModule's only reason to import
+// AuthModule) now lives in the @Global() SharedModule instead, so the
+// dependency is one-directional — AuthModule -> WorkspaceModule only.
 @Module({
   imports: [
     JwtModule.register({
@@ -21,10 +23,10 @@ import { WorkspaceModule } from '../workspace/workspace.module';
       signOptions: { expiresIn: '15m' }, // short-lived access tokens
     }),
     PrismaModule,
-    forwardRef(() => WorkspaceModule),  // ← forward ref to break circular dep
+    WorkspaceModule,
   ],
-  providers: [AuthService, EmailService, RolesGuard],
+  providers: [AuthService, RolesGuard],
   controllers: [AuthController],
-  exports: [AuthService, EmailService, RolesGuard],
+  exports: [AuthService, RolesGuard],
 })
 export class AuthModule {}

@@ -39,11 +39,12 @@ export default function OverviewScreen({ onNavigateToSell }: { onNavigateToSell?
 
     const loadData = useCallback(async () => {
         if (!userId) return;
+        const workspaceId = activeStoreOwnerId || userId;
         setRefreshing(true);
         try {
             const [sData, topP] = await Promise.all([
-                getDailyStats(userId, filter),
-                getTopSoldProducts(userId, 5)
+                getDailyStats(workspaceId, userId, filter),
+                getTopSoldProducts(workspaceId, userId, 5)
             ]);
             setStats(sData);
             setTopProducts(topP);
@@ -51,8 +52,8 @@ export default function OverviewScreen({ onNavigateToSell }: { onNavigateToSell?
             // Section 3A — fetch profit stats for Growth+ users
             if (isGrowthPlus) { // TODO: Remove before launch
                 const [pStats, topWithProfit] = await Promise.all([
-                    getProfitStats(userId, filter),
-                    getTopSoldProductsWithProfit(userId, topProductsLimit, filter),
+                    getProfitStats(workspaceId, userId, filter),
+                    getTopSoldProductsWithProfit(workspaceId, userId, topProductsLimit, filter),
                 ]);
                 setProfitStats(pStats);
                 setTopProductsWithProfit(topWithProfit);
@@ -62,7 +63,7 @@ export default function OverviewScreen({ onNavigateToSell }: { onNavigateToSell?
         } finally {
             setRefreshing(false);
         }
-    }, [filter, userId, isGrowthPlus, topProductsLimit]);
+    }, [filter, userId, activeStoreOwnerId, isGrowthPlus, topProductsLimit]);
 
     useEffect(() => { loadData(); }, [loadData]);
 

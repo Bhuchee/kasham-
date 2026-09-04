@@ -7,18 +7,9 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { EmailService } from '../auth/email.service';
+import { EmailService } from '../shared/email.service';
 import { randomBytes } from 'crypto';
-
-// ── Staff Activity Action Types ─────────────────────────────────────────────
-export enum StaffActivityAction {
-    SALE_COMPLETED = 'SALE_COMPLETED',
-    PRODUCT_ADDED = 'PRODUCT_ADDED',
-    STOCK_UPDATED = 'STOCK_UPDATED',
-    DISCOUNT_GIVEN = 'DISCOUNT_GIVEN',
-    DEBT_CREATED = 'DEBT_CREATED',
-    PAYMENT_LOGGED = 'PAYMENT_LOGGED',
-}
+import { StaffActivityAction } from '../shared/enums';
 
 @Injectable()
 export class WorkspaceService {
@@ -527,6 +518,13 @@ export class WorkspaceService {
         });
         if (!workspace) throw new NotFoundException('Workspace not found');
         return workspace;
+    }
+
+    async isMember(workspaceId: string, userId: string): Promise<boolean> {
+        const member = await this.prisma.workspaceMember.findFirst({
+            where: { workspaceId, userId, status: 'ACTIVE' },
+        });
+        return !!member;
     }
 
     async getMemberRole(workspaceId: string, userId: string): Promise<string | null> {

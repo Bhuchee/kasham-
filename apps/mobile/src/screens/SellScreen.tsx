@@ -88,10 +88,10 @@ export const Header = ({ title, subtitle, showBell = true }: { title: string, su
     useEffect(() => {
         if (!showBell || !userId) return;
         // FIX 7 — pass activeRole so role-based filtering applies to unread count
-        getNotifications(userId, activeRole ?? undefined).then(data => {
+        getNotifications(activeStoreOwnerId || userId, userId, activeRole ?? undefined).then(data => {
             setUnreadCount(data.filter((n: any) => n.is_read === 0).length);
         });
-    }, [showBell, sheetVisible, userId, activeRole]);
+    }, [showBell, sheetVisible, userId, activeStoreOwnerId, activeRole]);
 
     return (
         <View style={{ paddingTop: insets.top + 4 }} className="bg-white px-6 pb-2 border-b border-border flex-row items-center justify-between z-50">
@@ -136,7 +136,7 @@ export const Header = ({ title, subtitle, showBell = true }: { title: string, su
 
 // --- MAIN SCREEN ---
 export default function SellScreen({ onNavigateToStock, onNavigateToOverview }: { onNavigateToStock?: (barcode: string) => void; onNavigateToOverview?: () => void }) {
-    const { userId, businessName } = useAuthStore();
+    const { userId, businessName, activeStoreOwnerId } = useAuthStore();
     const { symbol: currencySymbol, formatAmount } = useCurrency();
     const [products, setProducts] = useState<any[]>([]);
     const [frequentProducts, setFrequentProducts] = useState<any[]>([]);
@@ -197,13 +197,14 @@ export default function SellScreen({ onNavigateToStock, onNavigateToOverview }: 
 
     const loadData = useCallback(async () => {
         if (!userId) return;
+        const workspaceId = activeStoreOwnerId || userId;
         const [pRows, fRows] = await Promise.all([
-            getProducts(userId),
-            getFrequentlySoldProducts(userId, 9)
+            getProducts(workspaceId, userId),
+            getFrequentlySoldProducts(workspaceId, userId, 9)
         ]);
         setProducts(pRows);
         setFrequentProducts(fRows);
-    }, [userId]);
+    }, [userId, activeStoreOwnerId]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -330,7 +331,7 @@ export default function SellScreen({ onNavigateToStock, onNavigateToOverview }: 
             const priceVal = parseFloat(miniProductPrice);
             
             // 1. Save product to local SQLite with quantity = 0
-            await createProduct(id, miniProductName, priceVal, 0, notFoundBarcode, null, userId, null);
+            await createProduct(id, miniProductName, priceVal, 0, notFoundBarcode, null, userId, null, 'others', activeStoreOwnerId || userId);
             
             const newProduct = {
                 id,
@@ -350,6 +351,7 @@ export default function SellScreen({ onNavigateToStock, onNavigateToOverview }: 
                 description: `${miniProductName} was added during a sale but has no quantity set. Tap to update.`,
                 relatedId: id,
                 userId,
+                workspaceId: activeStoreOwnerId || userId,
                 targetRoles: ['OWNER', 'MANAGER'], // Section 6C — only owners/managers see stock alerts
             });
 
@@ -401,8 +403,9 @@ export default function SellScreen({ onNavigateToStock, onNavigateToOverview }: 
             const finalTotal = parseFloat(finalPaidAmount) || total;
             const discount = total - finalTotal;
 
-            if (customerId) await createCustomer(customerId, customerPhone, customerName || 'Unknown', userId);
-            await createSale(saleId, finalTotal, method, discount, customerId, userId);
+            const workspaceId = activeStoreOwnerId || userId;
+            if (customerId) await createCustomer(customerId, customerPhone, customerName || 'Unknown', userId, workspaceId);
+            await createSale(saleId, finalTotal, method, discount, customerId, userId, workspaceId);
 
             for (const item of items) {
                 const itemTotal = item.quantity * item.price;
@@ -411,7 +414,7 @@ export default function SellScreen({ onNavigateToStock, onNavigateToOverview }: 
             }
 
             if (method === 'PAY_LATER' && customerId) {
-                await createDebt(uuidv4(), customerId, finalTotal, saleId, userId);
+                await createDebt(uuidv4(), customerId, finalTotal, saleId, userId, workspaceId);
             }
 
             // --- Notification triggers ---
@@ -422,10 +425,10 @@ export default function SellScreen({ onNavigateToStock, onNavigateToOverview }: 
                 const newStock = Math.max(0, prod.stock - item.quantity);
                 if (newStock === 0) {
                     const exists = await notificationExistsForRelated(item.productId, 'out_of_stock');
-                    if (!exists) await createNotification({ id: uuidv4(), type: 'out_of_stock', title: `${item.name} is out of stock`, description: `You just sold the last unit.`, relatedId: item.productId, userId, targetRoles: ['OWNER', 'MANAGER'] }); // Section 6C
+                    if (!exists) await createNotification({ id: uuidv4(), type: 'out_of_stock', title: `${item.name} is out of stock`, description: `You just sold the last unit.`, relatedId: item.productId, userId, workspaceId, targetRoles: ['OWNER', 'MANAGER'] }); // Section 6C
                 } else if (newStock <= threshold) {
                     const exists = await notificationExistsForRelated(item.productId, 'low_stock');
-                    if (!exists) await createNotification({ id: uuidv4(), type: 'low_stock', title: `Low stock: ${item.name}`, description: `Only ${newStock} unit${newStock === 1 ? '' : 's'} remaining.`, relatedId: item.productId, userId, targetRoles: ['OWNER', 'MANAGER'] }); // Section 6C
+                    if (!exists) await createNotification({ id: uuidv4(), type: 'low_stock', title: `Low stock: ${item.name}`, description: `Only ${newStock} unit${newStock === 1 ? '' : 's'} remaining.`, relatedId: item.productId, userId, workspaceId, targetRoles: ['OWNER', 'MANAGER'] }); // Section 6C
                 }
             }
 

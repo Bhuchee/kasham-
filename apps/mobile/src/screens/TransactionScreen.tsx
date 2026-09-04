@@ -87,7 +87,7 @@ export default function TransactionScreen() {
     const [productQuantity, setProductQuantity] = useState('1');
     const [showProductSelector, setShowProductSelector] = useState(false);
 
-    const { userId, businessName } = useAuthStore();
+    const { userId, businessName, activeStoreOwnerId } = useAuthStore();
     const { symbol: currencySymbol, formatAmount } = useCurrency();
     const insets = useSafeAreaInsets();
 
@@ -98,14 +98,15 @@ export default function TransactionScreen() {
 
     const loadData = useCallback(async () => {
         if (!userId) return;
+        const workspaceId = activeStoreOwnerId || userId;
         setLoading(true);
         try {
             const [tRows, dRows, sData, pRows, payLogs] = await Promise.all([
-                getTransactionHistory(userId),
-                getOutstandingDebts(userId),
-                getDailyStats(userId, 'today'),
-                getProducts(userId),
-                getPaymentLogs(userId)
+                getTransactionHistory(workspaceId, userId),
+                getOutstandingDebts(workspaceId, userId),
+                getDailyStats(workspaceId, userId, 'today'),
+                getProducts(workspaceId, userId),
+                getPaymentLogs(workspaceId, userId)
             ]);
             setTransactions(tRows);
             setDebts(dRows);
@@ -117,7 +118,7 @@ export default function TransactionScreen() {
         } finally {
             setLoading(false);
         }
-    }, [userId]);
+    }, [userId, activeStoreOwnerId]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -240,7 +241,8 @@ export default function TransactionScreen() {
                         'CASH',
                         'Debt Paid in Full',
                         `Debt ID: ${debt.id}`,
-                        userId || ''
+                        userId || '',
+                        activeStoreOwnerId || userId || ''
                     );
                     setDebtDetailsModal(false);
                     await loadData();
@@ -288,7 +290,7 @@ export default function TransactionScreen() {
         setPartialLoading(true);
         try {
             const remaining = selectedDebt.amount_owed - parsedAmount;
-            await recordDebtPayment(selectedDebt.id, parsedAmount, remaining);
+            await recordDebtPayment(selectedDebt.id, parsedAmount, remaining, userId || '', uuidv4(), activeStoreOwnerId || userId || '');
             await createPaymentLog(
                 uuidv4(),
                 parsedAmount,
@@ -297,7 +299,8 @@ export default function TransactionScreen() {
                 'CASH',
                 'Partial Debt Payment',
                 `Remaining balance: ${currencySymbol}${formatAmount(remaining).replace(currencySymbol, '')} (Debt ID: ${selectedDebt.id})`,
-                userId || ''
+                userId || '',
+                activeStoreOwnerId || userId || ''
             );
             setDebtDetailsModal(false);
             setPartialAmount('');
@@ -390,9 +393,10 @@ export default function TransactionScreen() {
                 logMethod,
                 deductStock && selectedProduct ? `Sale: ${selectedProduct.name}` : 'Manual Payment Log',
                 finalNotes || null,
-                userId || ''
+                userId || '',
+                activeStoreOwnerId || userId || ''
             );
-            
+
             setLogPaymentModal(false);
             setLogAmount('');
             setLogSenderName('');
@@ -1005,9 +1009,9 @@ export default function TransactionScreen() {
                         
                         <FlatList 
                             data={dbProducts}
-                            keyExtractor={p => p.id}
+                            keyExtractor={(p: any) => p.id}
                             showsVerticalScrollIndicator={false}
-                            renderItem={({ item }) => (
+                            renderItem={({ item }: { item: any }) => (
                                 <TouchableOpacity 
                                     onPress={() => {
                                         setSelectedProduct(item);

@@ -96,6 +96,21 @@ export class NotificationsService {
         });
     }
 
+    // ── Get all notifications for a workspace (any member's) ──────────────────
+    // NOTE: notifications are otherwise fanned out per-recipient at creation
+    // time (see createNotification / sendToWorkspace call sites), so this is
+    // a genuinely new capability, not a fix for broken scoping — the
+    // existing getNotifications(userId) above was already correct for what
+    // it does. Callers should be aware this returns every member's
+    // notifications, including ones addressed to someone else.
+    async getWorkspaceNotifications(workspaceId: string, _requestingUserId: string) {
+        return this.prisma.notification.findMany({
+            where: { workspaceId },
+            orderBy: { timestamp: 'desc' },
+            take: 50,
+        });
+    }
+
     // ── Mark all as read ───────────────────────────────────────────────────────
     async markAllRead(userId: string) {
         await this.prisma.notification.updateMany({

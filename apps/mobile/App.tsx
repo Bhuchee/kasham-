@@ -128,8 +128,11 @@ function MainApp() {
           return;
         }
 
+        const projectId = process.env.EXPO_PUBLIC_PROJECT_ID || Constants.expoConfig?.extra?.eas?.projectId;
+        console.log('[Push] Using projectId:', projectId);
+
         const pushToken = await Notifications.getExpoPushTokenAsync({
-          projectId: Constants.expoConfig?.extra?.eas?.projectId,
+          projectId,
         });
         const expo_push_token = pushToken.data;
 
@@ -225,6 +228,7 @@ function MainApp() {
         const result = await RevenueCatUI.presentPaywall();
         if (result === PAYWALL_RESULT.PURCHASED || result === PAYWALL_RESULT.RESTORED) {
           await useSubscriptionStore.getState().refreshSubscriptionStatus();
+          await refreshWorkspaces();
         }
       } catch (e) {
         console.warn('[RevenueCat] Paywall presentation failed:', e);
@@ -341,7 +345,8 @@ function MainApp() {
     if (isOnline && token && userId) {
       const restoreIfNeeded = async () => {
         try {
-          const localProducts = await getProducts(userId);
+          const workspaceId = activeStoreOwnerId || userId;
+          const localProducts = await getProducts(workspaceId, userId);
           if (localProducts.length === 0) {
             console.log('[Restore] Local DB empty, attempting restore...');
             const response = await fetch(`${API_URL}/user-products/restore`, {
@@ -360,7 +365,9 @@ function MainApp() {
                     p.barcode ?? null,
                     p.imageUrl ?? null,
                     userId,
-                    p.costPrice ?? null
+                    p.costPrice ?? null,
+                    p.category ?? 'others',
+                    workspaceId
                   );
                 }
                 console.log(`[Restore] Restored ${backendProducts.length} products`);

@@ -44,13 +44,10 @@ export class WebhooksService {
   }
 
   private async handleSubscriptionActive(userId: string, event: any): Promise<void> {
-    let newTier = 'FREE';
-    const productStr = JSON.stringify(event).toLowerCase();
-    if (productStr.includes('business')) {
-      newTier = 'BUSINESS';
-    } else if (productStr.includes('growth')) {
-      newTier = 'GROWTH';
-    }
+    // RevenueCat webhook events carry active entitlements as `entitlement_ids`
+    // (a string array) — this is distinct from the client SDK's
+    // `CustomerInfo.entitlements.active` map shape used elsewhere in the app.
+    const newTier = this.getTierFromEntitlements(event?.entitlement_ids ?? []);
 
     await this.prisma.workspace.updateMany({
       where: { ownerId: userId, status: 'ACTIVE' },
@@ -58,6 +55,16 @@ export class WebhooksService {
     });
 
     await this.notifyUser(userId, `Your subscription has been updated to ${newTier} tier.`);
+  }
+
+  private getTierFromEntitlements(entitlementIds: string[]): string {
+    if (entitlementIds.includes('business')) return 'BUSINESS';
+    if (entitlementIds.includes('growth')) return 'GROWTH';
+
+    if (entitlementIds.length > 0) {
+      this.logger.warn(`Unrecognized entitlements received: ${entitlementIds.join(', ')}`);
+    }
+    return 'FREE';
   }
 
   private async handleSubscriptionExpired(userId: string): Promise<void> {

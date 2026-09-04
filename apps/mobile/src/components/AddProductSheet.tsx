@@ -35,7 +35,7 @@ interface AddProductSheetProps {
 
 export default function AddProductSheet({ visible, onClose, onSuccess, initialBarcode, onOpenScanner }: AddProductSheetProps) {
     const insets = useSafeAreaInsets();
-    const { userId } = useAuthStore();
+    const { userId, activeStoreOwnerId } = useAuthStore();
     const { isOnline } = useSyncStore();
     const [name, setName] = useState('');
     const [price, setPrice] = useState('');
@@ -177,7 +177,7 @@ export default function AddProductSheet({ visible, onClose, onSuccess, initialBa
             }
             
             const finalCategory = category === 'Others' ? (customCategory.trim() || 'Others') : category;
-            await createProduct(uuidv4(), name, parseFloat(price), parseInt(stock, 10), barcode || null, imageUrl, userId || '', null, finalCategory);
+            await createProduct(uuidv4(), name, parseFloat(price), parseInt(stock, 10), barcode || null, imageUrl, userId || '', null, finalCategory, activeStoreOwnerId || userId || '');
             
             // Contribute to the shared catalogue if enabled with barcode
             if (barcode && isOnline) {
@@ -233,12 +233,16 @@ export default function AddProductSheet({ visible, onClose, onSuccess, initialBa
                         {/* Image Upload Area */}
                         <TouchableOpacity
                             onPress={handlePickImage}
-                            className="self-center mb-6"
+                            className="self-center mb-1"
                             style={{ width: 120, height: 120 }}
                         >
                             {localImageUri ? (
                                 <View style={{ width: 120, height: 120 }} className="rounded-2xl overflow-hidden">
-                                    <Image source={{ uri: localImageUri }} style={{ width: 120, height: 120 }} />
+                                    <Image
+                                        source={{ uri: localImageUri }}
+                                        style={{ width: 120, height: 120 }}
+                                        onError={(e) => console.warn('[AddProduct] Image load error:', e.nativeEvent.error, '| URI:', localImageUri)}
+                                    />
                                     <TouchableOpacity
                                         onPress={() => setLocalImageUri(null)}
                                         className="absolute top-2 right-2 bg-black/60 rounded-full p-1"
@@ -256,6 +260,11 @@ export default function AddProductSheet({ visible, onClose, onSuccess, initialBa
                                 </View>
                             )}
                         </TouchableOpacity>
+                        {localImageUri ? (
+                            <Text className="text-textSecondary text-[10px] font-bold text-center mb-5">Tap to change photo</Text>
+                        ) : (
+                            <View className="h-6" />
+                        )}
 
                         <TextInput placeholderTextColor="#94A3B8"
                             className={`bg-lightBackground border p-4 rounded-xl font-bold mb-1 text-textPrimary ${nameError ? 'border-red-500' : 'border-border'}`}

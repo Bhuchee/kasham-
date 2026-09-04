@@ -19,7 +19,7 @@ import { restorePurchases } from '../services/revenueCatService';
 
 interface Plan {
     name: string;
-    tier: 'GROWTH' | 'BUSINESS';
+    tier: 'FREE' | 'GROWTH' | 'BUSINESS';
     monthlyPrice: number;
     yearlyPrice: number;
     yearlyTotal: number;
@@ -28,6 +28,19 @@ interface Plan {
 }
 
 const PLANS: Plan[] = [
+    {
+        name: 'Starter',
+        tier: 'FREE',
+        monthlyPrice: 0,
+        yearlyPrice: 0,
+        yearlyTotal: 0,
+        features: [
+            'Up to 30 products',
+            '1 user account',
+            'Basic sales records',
+            'Offline mode',
+        ],
+    },
     {
         name: 'Growth',
         tier: 'GROWTH',
@@ -67,7 +80,7 @@ function formatNaira(amount: number): string {
 export default function SubscriptionScreen({ onBack }: { onBack: () => void }) {
     const { stores, activeStoreOwnerId, activeRole } = useAuthStore();
     const [billing, setBilling] = useState<'monthly' | 'yearly'>('monthly');
-    const [selectedPlanTier, setSelectedPlanTier] = useState<'GROWTH' | 'BUSINESS'>('GROWTH');
+    const [selectedPlanTier, setSelectedPlanTier] = useState<'FREE' | 'GROWTH' | 'BUSINESS'>('GROWTH');
     const [isLoading, setIsLoading] = useState(false);
     const { refreshSubscriptionStatus } = useSubscriptionStore();
     const [modal, setModal] = useState<{
@@ -84,7 +97,7 @@ export default function SubscriptionScreen({ onBack }: { onBack: () => void }) {
     const currentTier = activeStore?.tier ?? 'FREE';
     const isOwner = activeRole === 'OWNER';
 
-    const selectedPlan = PLANS.find(p => p.tier === selectedPlanTier)!;
+    const selectedPlan = PLANS.find(p => p.tier === selectedPlanTier) ?? PLANS.find(p => p.tier === 'GROWTH')!;
     const selectedPrice = billing === 'yearly' ? selectedPlan.yearlyTotal : selectedPlan.monthlyPrice;
     const priceLabel = billing === 'yearly'
         ? `${formatNaira(selectedPlan.yearlyPrice)}/mo`
@@ -236,13 +249,14 @@ export default function SubscriptionScreen({ onBack }: { onBack: () => void }) {
                 {PLANS.map(plan => {
                     const isSelected = selectedPlanTier === plan.tier;
                     const isCurrent = currentTier === plan.tier;
+                    const isFree = plan.tier === 'FREE';
                     const displayPrice = billing === 'yearly' ? plan.yearlyPrice : plan.monthlyPrice;
 
                     return (
                         <TouchableOpacity
                             key={plan.tier}
-                            onPress={() => setSelectedPlanTier(plan.tier)}
-                            activeOpacity={0.85}
+                            onPress={() => { if (!isFree) setSelectedPlanTier(plan.tier); }}
+                            activeOpacity={isFree ? 1 : 0.85}
                             style={[
                                 styles.planCard,
                                 isSelected && styles.planCardSelected,
@@ -266,21 +280,23 @@ export default function SubscriptionScreen({ onBack }: { onBack: () => void }) {
                                         )}
                                     </View>
                                     <Text style={styles.planPrice}>
-                                        {formatNaira(displayPrice)}
-                                        <Text style={styles.planPricePer}>/mo</Text>
+                                        {isFree ? 'Free' : formatNaira(displayPrice)}
+                                        {!isFree && <Text style={styles.planPricePer}>/mo</Text>}
                                     </Text>
-                                    {billing === 'yearly' && (
+                                    {!isFree && billing === 'yearly' && (
                                         <Text style={styles.billedYearly}>
                                             Billed as {formatNaira(plan.yearlyTotal)}/year
                                         </Text>
                                     )}
                                 </View>
-                                <View style={[
-                                    styles.selectCircle,
-                                    isSelected && styles.selectCircleActive,
-                                ]}>
-                                    {isSelected && <View style={styles.selectCircleDot} />}
-                                </View>
+                                {!isFree && (
+                                    <View style={[
+                                        styles.selectCircle,
+                                        isSelected && styles.selectCircleActive,
+                                    ]}>
+                                        {isSelected && <View style={styles.selectCircleDot} />}
+                                    </View>
+                                )}
                             </View>
 
                             {/* Features */}
@@ -298,10 +314,10 @@ export default function SubscriptionScreen({ onBack }: { onBack: () => void }) {
 
                 {/* CTA button */}
                 <TouchableOpacity
-                    style={[styles.upgradeButton, currentTier === selectedPlanTier && styles.upgradeButtonDisabled]}
+                    style={[styles.upgradeButton, (currentTier === selectedPlanTier || selectedPlanTier === 'FREE') && styles.upgradeButtonDisabled]}
                     onPress={handleUpgrade}
                     activeOpacity={0.85}
-                    disabled={currentTier === selectedPlanTier || isLoading}
+                    disabled={currentTier === selectedPlanTier || selectedPlanTier === 'FREE' || isLoading}
                 >
                     {isLoading ? (
                         <ActivityIndicator color="#FFFFFF" />
@@ -319,6 +335,36 @@ export default function SubscriptionScreen({ onBack }: { onBack: () => void }) {
                 <TouchableOpacity onPress={handleRestorePurchases} style={styles.restoreButton}>
                     <Text style={styles.restoreText}>Restore purchases</Text>
                 </TouchableOpacity>
+
+                {/* Feature comparison table */}
+                <View style={styles.comparisonTable}>
+                    <Text style={styles.comparisonTitle}>Compare Plans</Text>
+                    {[
+                        { label: 'Products', free: 'Up to 30', growth: 'Unlimited', business: 'Unlimited' },
+                        { label: 'User accounts', free: '1', growth: 'Up to 2', business: 'Up to 10' },
+                        { label: 'Sales records', free: 'Basic', growth: 'Full history', business: 'Full history' },
+                        { label: 'Profit tracking', free: '—', growth: 'Yes', business: 'Yes' },
+                        { label: 'Trend charts', free: '—', growth: 'Daily', business: 'Daily' },
+                        { label: 'Debt invoices', free: '—', growth: 'Yes', business: 'Yes' },
+                        { label: 'Staff activity log', free: '—', growth: '—', business: 'Yes' },
+                        { label: 'Data export', free: '—', growth: '—', business: 'CSV / PDF' },
+                        { label: 'Store branches', free: '1', growth: '1', business: 'Up to 3' },
+                    ].map((row, idx) => (
+                        <View key={idx} style={[styles.comparisonRow, idx % 2 === 0 && styles.comparisonRowAlt]}>
+                            <Text style={styles.comparisonFeature}>{row.label}</Text>
+                            <Text style={styles.comparisonCell}>{row.free}</Text>
+                            <Text style={[styles.comparisonCell, styles.comparisonCellGrowth]}>{row.growth}</Text>
+                            <Text style={[styles.comparisonCell, styles.comparisonCellBusiness]}>{row.business}</Text>
+                        </View>
+                    ))}
+                    {/* Table header */}
+                    <View style={styles.comparisonHeader}>
+                        <Text style={styles.comparisonHeaderFeature} />
+                        <Text style={styles.comparisonHeaderCell}>Starter</Text>
+                        <Text style={[styles.comparisonHeaderCell, { color: '#16A34A' }]}>Growth</Text>
+                        <Text style={[styles.comparisonHeaderCell, { color: '#2563EB' }]}>Business</Text>
+                    </View>
+                </View>
 
             </ScrollView>
 
@@ -436,4 +482,37 @@ const styles = StyleSheet.create({
 
     restoreButton: { alignItems: 'center', paddingVertical: 16, marginTop: 8 },
     restoreText: { fontSize: 14, color: '#94A3B8', fontWeight: '600' },
+
+    comparisonTable: {
+        marginTop: 8,
+        borderRadius: 16,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        backgroundColor: '#FFFFFF',
+    },
+    comparisonTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#0F172A',
+        paddingHorizontal: 16,
+        paddingTop: 16,
+        paddingBottom: 8,
+    },
+    comparisonHeader: {
+        flexDirection: 'row',
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        backgroundColor: '#F8FAFC',
+        borderTopWidth: 1,
+        borderTopColor: '#E2E8F0',
+    },
+    comparisonHeaderFeature: { flex: 2, fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase' },
+    comparisonHeaderCell: { flex: 1, fontSize: 11, fontWeight: '700', color: '#64748B', textAlign: 'center', textTransform: 'uppercase' },
+    comparisonRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 10 },
+    comparisonRowAlt: { backgroundColor: '#F8FAFC' },
+    comparisonFeature: { flex: 2, fontSize: 13, color: '#374151', fontWeight: '500' },
+    comparisonCell: { flex: 1, fontSize: 12, color: '#64748B', textAlign: 'center', fontWeight: '500' },
+    comparisonCellGrowth: { color: '#16A34A', fontWeight: '600' },
+    comparisonCellBusiness: { color: '#2563EB', fontWeight: '600' },
 });

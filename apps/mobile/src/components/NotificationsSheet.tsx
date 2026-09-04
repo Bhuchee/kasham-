@@ -15,15 +15,16 @@ interface NotificationsSheetProps {
 
 export default function NotificationsSheet({ visible, onClose }: NotificationsSheetProps) {
     const [notifications, setNotifications] = useState<any[]>([]);
-    const { userId } = useAuthStore();
+    const { userId, activeStoreOwnerId } = useAuthStore();
     const { symbol: currencySymbol, formatAmount } = useCurrency();
     const insets = useSafeAreaInsets();
 
     const generateDynamicNotifications = async () => {
         if (!userId) return;
-        
+        const workspaceId = activeStoreOwnerId || userId;
+
         // 1. Debt Reminders (older than 3 days)
-        const oldDebts = await getUnpaidDebtsOlderThan(userId, 3);
+        const oldDebts = await getUnpaidDebtsOlderThan(workspaceId, userId, 3);
         for (const debt of oldDebts) {
             const exists = await notificationExistsForRelated(debt.id, 'debt_reminder');
             if (!exists) {
@@ -34,6 +35,7 @@ export default function NotificationsSheet({ visible, onClose }: NotificationsSh
                     description: `${debt.customer_name} has an unpaid balance of ${formatAmount(debt.amount_owed)} from over 3 days ago.`,
                     relatedId: debt.id,
                     userId,
+                    workspaceId,
                     targetRoles: ['OWNER', 'MANAGER'], // Section 6C — debt reminders for owners/managers only
                 });
             }
@@ -43,7 +45,7 @@ export default function NotificationsSheet({ visible, onClose }: NotificationsSh
         const todayDateStr = new Date().toDateString();
         const exists = await notificationExistsForRelated(todayDateStr, 'daily_summary');
         if (!exists) {
-            const stats = await getDailyStats(userId, 'today');
+            const stats = await getDailyStats(workspaceId, userId, 'today');
             if (stats.count > 0) {
                 await createNotification({
                     id: uuidv4(),
@@ -52,6 +54,7 @@ export default function NotificationsSheet({ visible, onClose }: NotificationsSh
                     description: `You made ${stats.count} sales today totaling ${formatAmount(stats.revenue)}.`,
                     relatedId: todayDateStr,
                     userId,
+                    workspaceId,
                     // Section 6C — daily summary visible to all roles
                 });
             }
@@ -61,9 +64,9 @@ export default function NotificationsSheet({ visible, onClose }: NotificationsSh
     const loadNotifications = useCallback(async () => {
         if (!visible || !userId) return;
         await generateDynamicNotifications();
-        const data = await getNotifications(userId);
+        const data = await getNotifications(activeStoreOwnerId || userId, userId);
         setNotifications(data);
-    }, [visible, userId]);
+    }, [visible, userId, activeStoreOwnerId]);
 
     useEffect(() => {
         loadNotifications();
@@ -71,7 +74,7 @@ export default function NotificationsSheet({ visible, onClose }: NotificationsSh
 
     const handleMarkAllRead = async () => {
         if (!userId) return;
-        await markAllNotificationsRead(userId);
+        await markAllNotificationsRead(activeStoreOwnerId || userId, userId);
         await loadNotifications();
     };
 

@@ -108,7 +108,12 @@ model UserProduct {
   barcode       String?
   name          String
   sellingPrice  Float
+  // Integer minor-unit (kobo) mirror of sellingPrice/costPrice — see B5.
+  // Kept in sync by application code on every write; not yet the primary
+  // read source (that cutover is a separate follow-up pass).
+  sellingPriceKobo Int?
   costPrice     Float?
+  costPriceKobo Int?
   stock         Int       @default(0)
   imageUrl      String?
   category      String?
@@ -147,7 +152,9 @@ model Sale {
   staffId        String?    // which staff member made this sale
   staff          User?      @relation("SaleStaff", fields: [staffId], references: [id], onDelete: SetNull)
   total          Float
+  totalKobo      Int?
   discountAmount Float      @default(0)
+  discountAmountKobo Int?  @default(0)
   paymentType    String     // CASH | TRANSFER | POS | PAY_LATER
   timestamp      DateTime   @default(now())
   synced         Boolean    @default(true)
@@ -176,6 +183,7 @@ model SaleItem {
   productName   String?      // snapshot at time of sale
   quantity      Int
   price         Float        // price at time of sale
+  priceKobo     Int?
 }
 
 // ──────────────────────────────────────────────
@@ -184,6 +192,7 @@ model SaleItem {
 model Payment {
   id         String   @id @default(uuid())
   amount     Float
+  amountKobo Int?
   senderName String?
   matched    Boolean  @default(false)
   saleId     String?
@@ -197,15 +206,50 @@ model Payment {
 // DEBTS
 // ──────────────────────────────────────────────
 model Debt {
-  id         String    @id @default(uuid())
-  customerId String
-  customer   Customer  @relation(fields: [customerId], references: [id])
-  amountOwed Float
-  saleId     String?
-  sale       Sale?     @relation(fields: [saleId], references: [id])
-  status     String    @default("PENDING") // PENDING | PAID
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id             String        @id @default(uuid())
+  // Direct workspace scoping (in addition to the indirect Customer/Sale
+  // relations) — every other money-bearing model (Sale, UserProduct,
+  // Payment via Sale) has this; Debt was the one exception, which is what
+  // let the mobile sync bug hide (nothing to query workspace debts by).
+  workspaceId    String?
+  // The staff member (User.id) who created this debt — for audit/attribution,
+  // separate from workspace scoping. Nullable because pre-existing debts
+  // predate this field.
+  createdBy      String?
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id])
+  amountOwed     Float
+  amountOwedKobo Int?
+  // Snapshot of the debt's amount at creation — never changes afterward.
+  // amountOwed is recomputed from `payments` as originalAmount minus the sum
+  // of recorded DebtPayment rows, so concurrent partial payments from
+  // different devices add up instead of clobbering each other.
+  originalAmount Float?
+  originalAmountKobo Int?
+  saleId         String?
+  sale           Sale?         @relation(fields: [saleId], references: [id])
+  status         String        @default("PENDING") // PENDING | PARTIAL | PAID
+  payments       DebtPayment[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([workspaceId])
+}
+
+// ──────────────────────────────────────────────
+// DEBT PAYMENTS (individual payment events — see Debt.originalAmount)
+// ──────────────────────────────────────────────
+model DebtPayment {
+  id       String   @id
+  debtId   String
+  debt     Debt     @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  amount   Float
+  amountKobo Int?
+  paidBy   String
+  paidAt   DateTime @default(now())
+  deviceId String?
+
+  @@index([debtId])
 }
 
 // ──────────────────────────────────────────────
@@ -230,13 +274,16 @@ model Notification {
 // GLOBAL CATALOGUE (shared barcode database)
 // ──────────────────────────────────────────────
 model CatalogueProduct {
-  barcode   String   @id
-  name      String
-  brand     String?
-  imageUrl  String?
-  category  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  barcode       String    @id
+  name          String
+  brand         String?
+  imageUrl      String?
+  category      String?
+  contributedBy String?
+  lastEditedBy  String?
+  lastEditedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 // ──────────────────────────────────────────────
